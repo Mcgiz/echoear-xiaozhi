@@ -125,7 +125,8 @@ bool Assets::Apply() {
             return false;
         }
     }
-    
+
+#if 0
     cJSON* srmodels = cJSON_GetObjectItem(root, "srmodels");
     if (cJSON_IsString(srmodels)) {
         std::string srmodels_file = srmodels->valuestring;
@@ -145,6 +146,10 @@ bool Assets::Apply() {
             ESP_LOGE(TAG, "The srmodels file %s is not found", srmodels_file.c_str());
         }
     }
+#else
+    auto& app = Application::GetInstance();
+    app.GetAudioService().SetModelsList(nullptr);
+#endif
 
 #ifdef HAVE_LVGL
     auto& theme_manager = LvglThemeManager::GetInstance();

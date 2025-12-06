@@ -24,6 +24,7 @@
 #include "assets/lang_config.h"
 #include "board.h"
 #include "gfx.h"
+#include "echo_base_control.h"
 
 LV_FONT_DECLARE(BUILTIN_TEXT_FONT);
 
@@ -41,6 +42,7 @@ static const char* TAG = "EmoteDisplay";
 #define UI_ELEMENT_CLOCK_LABEL   "clock_label"
 #define UI_ELEMENT_LISTEN_ANIM   "listen_anim"
 #define UI_ELEMENT_STATUS_ICON   "status_icon"
+#define UI_ELEMENT_EMERG_DLG     "emerg_dlg"
 
 // Icon Names - Centralized Management
 #define ICON_MIC                 "icon_mic"
@@ -63,6 +65,7 @@ static gfx_obj_t* g_obj_label_clock = nullptr;
 static gfx_obj_t* g_obj_anim_eye = nullptr;
 static gfx_obj_t* g_obj_anim_listen = nullptr;
 static gfx_obj_t* g_obj_img_status = nullptr;
+static gfx_obj_t* g_obj_anim_emerg_dlg = nullptr;
 
 // Track current icon to determine when to show time
 static std::string g_current_icon_type = ICON_WIFI_FAILED;
@@ -141,12 +144,23 @@ public:
         return engine_handle_;
     }
 
+    // Dialog animation methods
+    bool SetDialogAnim(const std::string &emoji_name, EmoteDisplay* const display);
+    void* GetDialogTimer() const { return dialog_timer_; }
+    void SetDialogTimer(void* timer) { dialog_timer_ = timer; }
+    void ClearDialogTimer() { dialog_timer_ = nullptr; }
+    std::string GetCurrentDialogEmoji() const { return current_dialog_emoji_; }
+    void ClearCurrentDialogEmoji() { current_dialog_emoji_.clear(); }
+
     // Callback functions (public to be accessible from static helper functions)
     static bool OnFlushIoReady(const esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t* const edata, void* const user_ctx);
     static void OnFlush(const gfx_handle_t handle, const int x_start, const int y_start, const int x_end, const int y_end, const void* const color_data);
+    static void OnDialogTimer(void* user_ctx);
 
 private:
     gfx_handle_t engine_handle_;
+    void* dialog_timer_ = nullptr;
+    std::string current_dialog_emoji_;  // 当前显示的 dialog emoji 名称
 };
 
 // ============================================================================
@@ -265,6 +279,10 @@ static void SetupUI(const gfx_handle_t engine_handle, EmoteDisplay* const displa
     g_obj_img_status = gfx_img_create(engine_handle);
     gfx_obj_align(g_obj_img_status, GFX_ALIGN_TOP_MID, -120, 18);
 
+    g_obj_anim_emerg_dlg = gfx_anim_create(engine_handle);
+    gfx_obj_align(g_obj_anim_emerg_dlg, GFX_ALIGN_CENTER, 0, 0);
+    gfx_obj_set_visible(g_obj_anim_emerg_dlg, false);
+
     SetUIDisplayMode(UIDisplayMode::SHOW_TIPS, display);
 }
 
@@ -302,6 +320,10 @@ EmoteEngine::EmoteEngine(const esp_lcd_panel_handle_t panel, const esp_lcd_panel
 EmoteEngine::~EmoteEngine()
 {
     if (engine_handle_) {
+        if (dialog_timer_) {
+            gfx_timer_delete(engine_handle_, dialog_timer_);
+            dialog_timer_ = nullptr;
+        }
         gfx_emote_deinit(engine_handle_);
         engine_handle_ = nullptr;
     }
@@ -358,11 +380,62 @@ void EmoteEngine::SetIcon(const std::string &icon_name, EmoteDisplay* const disp
     g_current_icon_type = icon_name;
 }
 
+bool EmoteEngine::SetDialogAnim(const std::string &emoji_name, EmoteDisplay* const display)
+{
+    if (!engine_handle_) {
+        ESP_LOGE(TAG, "SetDialogAnim: engine_handle_ is nullptr");
+        return false;
+    }
+
+    if (!display) {
+        ESP_LOGE(TAG, "SetDialogAnim: display is nullptr");
+        return false;
+    }
+
+    const AssetData emoji_data = display->GetEmojiData(emoji_name);
+    if (!emoji_data.data) {
+        ESP_LOGW(TAG, "SetDialogAnim: No emoji data found for %s", emoji_name.c_str());
+        return false;
+    }
+
+    DisplayLockGuard lock(display);
+    gfx_anim_set_src(g_obj_anim_emerg_dlg, emoji_data.data, emoji_data.size);
+    gfx_anim_set_segment(g_obj_anim_emerg_dlg, 0, 0xFFFF, emoji_data.fps > 0 ? emoji_data.fps : 20, emoji_data.loop);
+    gfx_obj_set_visible(g_obj_anim_emerg_dlg, true);
+    gfx_anim_start(g_obj_anim_emerg_dlg);
+
+    // Hide eye animation when showing dialog
+    if (g_obj_anim_eye) {
+        gfx_obj_set_visible(g_obj_anim_eye, false);
+    }
+
+    // 更新当前 dialog emoji 名称
+    current_dialog_emoji_ = emoji_name;
+
+    return true;
+}
+
+void EmoteEngine::OnDialogTimer(void* user_ctx)
+{
+    if (!user_ctx) {
+        return;
+    }
+
+    EmoteDisplay* display = static_cast<EmoteDisplay*>(user_ctx);
+    if (display && display->GetEngine()) {
+        display->StopAnimDialog();
+    }
+}
+
 bool EmoteEngine::OnFlushIoReady(const esp_lcd_panel_io_handle_t panel_io,
                                  esp_lcd_panel_io_event_data_t* const edata,
                                  void* const user_ctx)
 {
-    return true;
+    gfx_handle_t handle = static_cast<gfx_handle_t>(user_ctx);
+    if (handle) {
+        gfx_emote_flush_ready(handle, true);
+    }
+    return false;
 }
 
 void EmoteEngine::OnFlush(const gfx_handle_t handle, const int x_start, const int y_start,
@@ -372,7 +445,6 @@ void EmoteEngine::OnFlush(const gfx_handle_t handle, const int x_start, const in
     if (panel) {
         esp_lcd_panel_draw_bitmap(panel, x_start, y_start, x_end, y_end, color_data);
     }
-    gfx_emote_flush_ready(handle, true);
 }
 
 // ============================================================================
@@ -528,8 +600,8 @@ void EmoteDisplay::AddEmojiData(const std::string &name, const void* const data,
                                 uint8_t fps, bool loop, bool lack)
 {
     emoji_data_map_[name] = AssetData(data, size, fps, loop, lack);
-    ESP_LOGD(TAG, "Added emoji data: %s, size: %d, fps: %d, loop: %s, lack: %s",
-             name.c_str(), size, fps, loop ? "true" : "false", lack ? "true" : "false");
+    // ESP_LOGI(TAG, "Added emoji data: %s, size: %d, fps: %d, loop: %s, lack: %s",
+    //          name.c_str(), size, fps, loop ? "true" : "false", lack ? "true" : "false");
 
     DisplayLockGuard lock(this);
     if (name == "happy") {
@@ -566,7 +638,8 @@ void EmoteDisplay::AddLayoutData(const std::string &name, const std::string &ali
         {g_obj_label_toast,  UI_ELEMENT_TOAST_LABEL},
         {g_obj_label_clock,  UI_ELEMENT_CLOCK_LABEL},
         {g_obj_anim_listen,  UI_ELEMENT_LISTEN_ANIM},
-        {g_obj_img_status,   UI_ELEMENT_STATUS_ICON}
+        {g_obj_img_status,   UI_ELEMENT_STATUS_ICON},
+        {g_obj_anim_emerg_dlg, UI_ELEMENT_EMERG_DLG},
     };
 
     DisplayLockGuard lock(this);
@@ -650,6 +723,91 @@ void EmoteDisplay::Unlock()
     if (engine_ && engine_->GetEngineHandle()) {
         gfx_emote_unlock(engine_->GetEngineHandle());
     }
+}
+
+bool EmoteDisplay::StopAnimDialog()
+{
+    if (!engine_) {
+        return false;
+    }
+
+    void* engine_handle = engine_->GetEngineHandle();
+    if (!engine_handle) {
+        return false;
+    }
+
+    gfx_emote_lock(engine_handle);
+
+    // Stop and delete timer if exists
+    void* dialog_timer = engine_->GetDialogTimer();
+    if (dialog_timer) {
+        gfx_timer_delete(engine_handle, dialog_timer);
+        engine_->ClearDialogTimer();
+    }
+
+    if (g_obj_anim_emerg_dlg) {
+        gfx_obj_set_visible(g_obj_anim_emerg_dlg, false);
+    }
+
+    if (g_obj_anim_eye) {
+        gfx_obj_set_visible(g_obj_anim_eye, true);
+    }
+
+    // 标记位置：清除当前 dialog emoji 名称（手动停止或自动停止时）
+    engine_->ClearCurrentDialogEmoji();
+
+    gfx_emote_unlock(engine_handle);
+
+    return true;
+}
+
+bool EmoteDisplay::InsertAnimDialog(const char* emoji_name, uint32_t duration_ms)
+{
+    if (!emoji_name || !engine_) {
+        return false;
+    }
+
+    // 如果插入的 emoji 和当前显示的一样，不处理，直接返回
+    if (engine_->GetCurrentDialogEmoji() == emoji_name) {
+        ESP_LOGD(TAG, "InsertAnimDialog: Same emoji %s already displayed, skipping", emoji_name);
+        return true;
+    }
+
+    void* engine_handle = engine_->GetEngineHandle();
+    if (!engine_handle) {
+        return false;
+    }
+
+    // Stop existing timer if any
+    gfx_emote_lock(engine_handle);
+    void* dialog_timer = engine_->GetDialogTimer();
+    if (dialog_timer) {
+        gfx_timer_delete(engine_handle, dialog_timer);
+        engine_->ClearDialogTimer();
+    }
+    gfx_emote_unlock(engine_handle);
+
+    // Set dialog animation (this will lock internally)
+    if (!engine_->SetDialogAnim(emoji_name, this)) {
+        return false;
+    }
+
+    // Create timer for auto-stop
+    gfx_emote_lock(engine_handle);
+
+    void* timer = gfx_timer_create(engine_handle, EmoteEngine::OnDialogTimer, duration_ms, this);
+    if (!timer) {
+        ESP_LOGE(TAG, "Failed to create dialog timer");
+        gfx_emote_unlock(engine_handle);
+        StopAnimDialog();
+        return false;
+    }
+
+    gfx_timer_set_repeat_count(timer, 1);  // Execute only once
+    engine_->SetDialogTimer(timer);
+    gfx_emote_unlock(engine_handle);
+
+    return true;
 }
 
 } // namespace emote

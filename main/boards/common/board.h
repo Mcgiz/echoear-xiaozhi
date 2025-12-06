@@ -52,6 +52,9 @@ public:
     virtual void SetPowerSaveMode(bool enabled) = 0;
     virtual std::string GetBoardJson() = 0;
     virtual std::string GetDeviceStatusJson() = 0;
+    virtual void SetAfeDataProcessCallback(std::function<void(const int16_t* audio_data, size_t total_bytes)> callback) {}
+    virtual void SetVadStateChangeCallback(std::function<void(bool speaking)> callback) {}
+    virtual void SetAudioDataProcessedCallback(std::function<void(const int16_t* audio_data, size_t bytes_per_channel, size_t channels)> callback) {}
 };
 
 #define DECLARE_BOARD(BOARD_CLASS_NAME) \

@@ -50,7 +50,8 @@ bool AfeWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) {
         ESP_LOGE(TAG, "Failed to initialize wakenet model");
         return false;
     }
-    for (int i = 0; i < models_->num; i++) {
+    // for (int i = 0; i < models_->num; i++) {
+    for (int i = 0; i < 1; i++) {
         ESP_LOGI(TAG, "Model %d: %s", i, models_->model_name[i]);
         if (strstr(models_->model_name[i], ESP_WN_PREFIX) != NULL) {
             wakenet_model_ = models_->model_name[i];
@@ -71,15 +72,23 @@ bool AfeWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) {
     for (int i = 0; i < ref_num; i++) {
         input_format.push_back('R');
     }
+
+    ESP_LOGI(TAG, "input_format: %s", input_format.c_str());
+    
     afe_config_t* afe_config = afe_config_init(input_format.c_str(), models_, AFE_TYPE_SR, AFE_MODE_HIGH_PERF);
     afe_config->aec_init = codec_->input_reference();
     afe_config->aec_mode = AEC_MODE_SR_HIGH_PERF;
+    afe_config->vad_mode = VAD_MODE_3;
+    afe_config->vad_min_noise_ms = 64;
+    afe_config->vad_init = true;
     afe_config->afe_perferred_core = 1;
     afe_config->afe_perferred_priority = 1;
     afe_config->memory_alloc_mode = AFE_MEMORY_ALLOC_MORE_PSRAM;
     
     afe_iface_ = esp_afe_handle_from_config(afe_config);
     afe_data_ = afe_iface_->create_from_config(afe_config);
+
+    afe_config_print(afe_config);
 
     xTaskCreate([](void* arg) {
         auto this_ = (AfeWakeWord*)arg;
@@ -92,6 +101,14 @@ bool AfeWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) {
 
 void AfeWakeWord::OnWakeWordDetected(std::function<void(const std::string& wake_word)> callback) {
     wake_word_detected_callback_ = callback;
+}
+
+void AfeWakeWord::OnVadStateChange(std::function<void(bool speaking)> callback) {
+    vad_state_change_callback_ = callback;
+}
+
+void AfeWakeWord::OnAfeDataProcessed(std::function<void(const int16_t* audio_data, size_t total_bytes)> callback) {
+    afe_data_callback_ = callback;
 }
 
 void AfeWakeWord::Start() {
@@ -130,7 +147,23 @@ void AfeWakeWord::AudioDetectionTask() {
 
         auto res = afe_iface_->fetch_with_delay(afe_data_, portMAX_DELAY);
         if (res == nullptr || res->ret_value == ESP_FAIL) {
+            printf("fetch_with_delay failed, ret_value: %d\n", res->ret_value);
             continue;;
+        }
+
+        if (afe_data_callback_) {
+            afe_data_callback_(res->data, res->data_size);
+        }
+
+        // VAD state change detection and notification
+        if (vad_state_change_callback_) {
+            if (res->vad_state == VAD_SPEECH && !is_speaking_) {
+                is_speaking_ = true;
+                vad_state_change_callback_(true);
+            } else if (res->vad_state == VAD_SILENCE && is_speaking_) {
+                is_speaking_ = false;
+                vad_state_change_callback_(false);
+            }
         }
 
         // Store the wake word data for voice recognition, like who is speaking

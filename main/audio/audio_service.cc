@@ -1,4 +1,6 @@
 #include "audio_service.h"
+#include "application.h"
+#include "device_state.h"
 #include <esp_log.h>
 #include <cstring>
 
@@ -139,11 +141,15 @@ bool AudioService::ReadAudioData(std::vector<int16_t>& data, int sample_rate, in
         codec_->EnableInput(true);
     }
 
+    size_t channels = codec_->input_channels();
+
     if (codec_->input_sample_rate() != sample_rate) {
         data.resize(samples * codec_->input_sample_rate() / sample_rate * codec_->input_channels());
         if (!codec_->InputData(data)) {
+            ESP_LOGE(TAG, "Failed to input audio data");
             return false;
         }
+
         if (codec_->input_channels() == 2) {
             auto mic_channel = std::vector<int16_t>(data.size() / 2);
             auto reference_channel = std::vector<int16_t>(data.size() / 2);
@@ -157,7 +163,7 @@ bool AudioService::ReadAudioData(std::vector<int16_t>& data, int sample_rate, in
             reference_resampler_.Process(reference_channel.data(), reference_channel.size(), resampled_reference.data());
             data.resize(resampled_mic.size() + resampled_reference.size());
             for (size_t i = 0, j = 0; i < resampled_mic.size(); ++i, j += 2) {
-                data[j] = resampled_mic[i];
+                data[j + 0] = resampled_mic[i];
                 data[j + 1] = resampled_reference[i];
             }
         } else {
@@ -170,6 +176,13 @@ bool AudioService::ReadAudioData(std::vector<int16_t>& data, int sample_rate, in
         if (!codec_->InputData(data)) {
             return false;
         }
+    }
+
+    size_t samples_per_channel = data.size() / channels;
+    size_t bytes_per_channel = samples_per_channel * sizeof(int16_t);
+
+    if (callbacks_.on_audio_data_processed) {
+        callbacks_.on_audio_data_processed(data.data(), bytes_per_channel, channels);
     }
 
     /* Update the last input time */
@@ -517,7 +530,22 @@ void AudioService::EnableDeviceAec(bool enable) {
 }
 
 void AudioService::SetCallbacks(AudioServiceCallbacks& callbacks) {
-    callbacks_ = callbacks;
+    // Merge callbacks instead of overwriting, preserve existing callbacks if new ones are not provided
+    if (callbacks.on_send_queue_available) {
+        callbacks_.on_send_queue_available = callbacks.on_send_queue_available;
+    }
+    if (callbacks.on_wake_word_detected) {
+        callbacks_.on_wake_word_detected = callbacks.on_wake_word_detected;
+    }
+    if (callbacks.on_vad_change) {
+        callbacks_.on_vad_change = callbacks.on_vad_change;
+    }
+    if (callbacks.on_audio_testing_queue_full) {
+        callbacks_.on_audio_testing_queue_full = callbacks.on_audio_testing_queue_full;
+    }
+    if (callbacks.on_audio_data_processed) {
+        callbacks_.on_audio_data_processed = callbacks.on_audio_data_processed;
+    }
 }
 
 void AudioService::PlaySound(const std::string_view& ogg) {
@@ -651,7 +679,9 @@ void AudioService::CheckAndUpdateAudioPowerState() {
 
 void AudioService::SetModelsList(srmodel_list_t* models_list) {
     models_list_ = models_list;
-
+    if(models_list == nullptr) {
+        models_list_ = esp_srmodel_init("model");
+    }
 #if CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32P4
     if (esp_srmodel_filter(models_list_, ESP_MN_PREFIX, NULL) != nullptr) {
         wake_word_ = std::make_unique<CustomWakeWord>();
@@ -674,6 +704,22 @@ void AudioService::SetModelsList(srmodel_list_t* models_list) {
                 callbacks_.on_wake_word_detected(wake_word);
             }
         });
+        
+        // Setup beat detection callback if board supports it
+        Board& board = Board::GetInstance();
+        board.SetAfeDataProcessCallback([](const int16_t* audio_data, size_t total_bytes) {
+            // This will be overridden by board-specific implementation (e.g., EspS3Cat)
+        });
+        
+        // Setup VAD state change callback if board supports it
+        board.SetVadStateChangeCallback([](bool speaking) {
+            // This will be overridden by board-specific implementation (e.g., EspS3Cat)
+        });
+        
+        // Setup audio data processed callback if board supports it
+        board.SetAudioDataProcessedCallback([](const int16_t* audio_data, size_t bytes_per_channel, size_t channels) {
+            // This will be overridden by board-specific implementation (e.g., EspS3Cat)
+        });
     }
 }
 
@@ -683,4 +729,37 @@ bool AudioService::IsAfeWakeWord() {
 #else
     return false;
 #endif
+}
+
+void AudioService::SetAfeDataProcessedCallback(std::function<void(const int16_t* audio_data, size_t total_bytes)> callback) {
+#if CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32P4
+    if (wake_word_ != nullptr) {
+        AfeWakeWord* afe_wake_word = dynamic_cast<AfeWakeWord*>(wake_word_.get());
+        if (afe_wake_word != nullptr) {
+            afe_wake_word->OnAfeDataProcessed(callback);
+            ESP_LOGI(TAG, "AFE data processed callback registered in AfeWakeWord");
+        } else {
+            ESP_LOGW(TAG, "Wake word is not AfeWakeWord, cannot set AFE data callback");
+        }
+    }
+#endif
+}
+
+void AudioService::SetVadStateChangeCallback(std::function<void(bool speaking)> callback) {
+#if CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32P4
+    if (wake_word_ != nullptr) {
+        AfeWakeWord* afe_wake_word = dynamic_cast<AfeWakeWord*>(wake_word_.get());
+        if (afe_wake_word != nullptr) {
+            afe_wake_word->OnVadStateChange(callback);
+            ESP_LOGI(TAG, "VAD state change callback registered in AfeWakeWord");
+        } else {
+            ESP_LOGW(TAG, "Wake word is not AfeWakeWord, cannot set VAD state change callback");
+        }
+    }
+#endif
+}
+
+void AudioService::SetAudioDataProcessedCallback(std::function<void(const int16_t* audio_data, size_t bytes_per_channel, size_t channels)> callback) {
+    callbacks_.on_audio_data_processed = callback;
+    ESP_LOGI(TAG, "Audio data processed callback registered");
 }
