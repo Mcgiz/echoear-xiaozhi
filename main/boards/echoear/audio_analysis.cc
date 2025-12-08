@@ -100,16 +100,17 @@ void AudioAnalysis::DoaTrackerResultCallback(float angle, void *ctx)
         ESP_LOGE(TAG, "audio_doa_tracker_result_callback: app is NULL");
         return;
     }
-    if (app->last_callback_time == 0) {
-        app->last_callback_time = xTaskGetTickCount();
-    } else {
-        if (xTaskGetTickCount() - app->last_callback_time > pdMS_TO_TICKS(500)) {
-            ESP_LOGI(TAG, "Direction: %.2f", angle);
-            // echo_base_control_set_angle(angle);
-            app->last_callback_time = xTaskGetTickCount();
-        }
-    }
-    // ESP_LOGI(TAG, "Estimated direction: %.2f", angle);
+    // if (app->last_callback_time == 0) {
+    //     app->last_callback_time = xTaskGetTickCount();
+    // } else {
+    //     if (xTaskGetTickCount() - app->last_callback_time > pdMS_TO_TICKS(500)) {
+    //         ESP_LOGI(TAG, "Direction: %.2f", angle);
+    //         echo_base_control_set_angle(angle);
+    //         app->last_callback_time = xTaskGetTickCount();
+    //     }
+    // }
+    ESP_LOGI(TAG, "Estimated direction: %.2f", angle);
+    echo_base_control_set_angle(angle);
 }
 
 void AudioAnalysis::SetAfeDataProcessCallback()

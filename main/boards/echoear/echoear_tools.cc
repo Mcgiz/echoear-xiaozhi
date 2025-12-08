@@ -3,6 +3,8 @@
 #include "echo_base_control.h"
 #include "audio_analysis.h"
 #include "mcp_server.h"
+#include "board.h"
+#include "assets/lang_config.h"
 #include <esp_log.h>
 
 #define TAG "EchoEarTools"
@@ -17,13 +19,15 @@ void EchoEarTools::Initialize(EspS3Cat* board)
                        "shark_head_decay: 缓慢摇头动作\n"
                        "look_around: 环顾四周动作\n"
                        "beat_swing: 节拍摇摆动作\n"
-                       "cat_nuzzle: 蹭头撒娇动作",
+                       "cat_nuzzle: 蹭头撒娇动作\n"
+                       "calibrate: 校准底座",
     PropertyList({
         Property("action", kPropertyTypeString),
     }), [board](const PropertyList & properties) -> ReturnValue {
         const std::string &action = properties["action"].value<std::string>();
         int action_value = -1;
 
+        ESP_LOGI(TAG, "&&& Do Action: %s", action.c_str());
         if (action == "shark_head") {
             action_value = ECHO_BASE_CMD_SET_ACTION_SHARK_HEAD;
         } else if (action == "shark_head_decay") {
@@ -37,17 +41,33 @@ void EchoEarTools::Initialize(EspS3Cat* board)
         } else if (action == "cat_nuzzle")
         {
             action_value = ECHO_BASE_CMD_SET_ACTION_CAT_NUZZLE;
+        } else if (action == "calibrate")
+        {
+            echo_base_control_set_calibrate();
+
+            Display* display = Board::GetInstance().GetDisplay();
+            display->SetChatMessage("system", Lang::Strings::CALIBRATING_STEP1);
+
+            BaseControl* base_control = board->GetBaseControl();
+            if (base_control != nullptr) {
+                bool completed = base_control->WaitForCalibrationComplete(30000);
+                if (!completed) {
+                    ESP_LOGW(TAG, "Calibration wait timeout");
+                    return false;
+                }
+            }
         } else
         {
-            ESP_LOGE(TAG, "Unknown action: %s", action.c_str());
             return false;
         }
 
-        esp_err_t ret = echo_base_control_set_action(action_value);
-        if (ret != ESP_OK)
+        if (action_value != -1)
         {
-            ESP_LOGE(TAG, "Failed to set action: %d", ret);
-            return false;
+            esp_err_t ret = echo_base_control_set_action(action_value);
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to set action: %d", ret);
+                return false;
+            }
         }
         return true;
     });
@@ -55,7 +75,7 @@ void EchoEarTools::Initialize(EspS3Cat* board)
     // Audio analysis mode control
     mcp_server.AddTool("self.echo_base.set_audio_mode", "Set audio analysis mode. Available modes:\n"
                        "beat_detection: 鼓点检测模式，跟着音乐跳舞\n"
-                       "doa_follow: DOA 人声音跟随模式\n"
+                       "doa_follow: DOA 声音方向跟随模式\n"
                        "disabled: 禁用音频分析",
     PropertyList({
         Property("mode", kPropertyTypeString),
@@ -67,9 +87,11 @@ void EchoEarTools::Initialize(EspS3Cat* board)
             analysis_mode = AudioAnalysisMode::BEAT_DETECTION;
         } else if (mode == "doa_follow") {
             analysis_mode = AudioAnalysisMode::DOA_FOLLOW;
-        } else if (mode == "disabled") {
+        } else if (mode == "disabled")
+        {
             analysis_mode = AudioAnalysisMode::DISABLED;
-        } else {
+        } else
+        {
             ESP_LOGE(TAG, "Unknown audio analysis mode: %s", mode.c_str());
             return false;
         }

@@ -1,4 +1,4 @@
-#include "cst816s_touch.h"
+#include "touch_cst816s.h"
 #include <esp_log.h>
 
 #define TAG "Cst816s"
@@ -49,15 +49,16 @@ Cst816s::TouchEvent Cst816s::CheckTouchEvent()
         // Press event (transition from not touched to touched)
         press_count_++;
         event = TOUCH_PRESS;
-        ESP_LOGI(TAG, "TOUCH PRESS - count: %d, x: %d, y: %d", press_count_, tp_.x, tp_.y);
+        ESP_LOGI(TAG, "PRESS");
+        ESP_LOGD(TAG, "count: %d, x: %d, y: %d", press_count_, tp_.x, tp_.y);
     } else if (!is_touched && was_touched_) {
         // Release event (transition from touched to not touched)
         event = TOUCH_RELEASE;
-        ESP_LOGI(TAG, "TOUCH RELEASE - total presses: %d", press_count_);
+        ESP_LOGI(TAG, "RELEASE");
     } else if (is_touched && was_touched_) {
         // Continuous touch (hold)
         event = TOUCH_HOLD;
-        ESP_LOGD(TAG, "TOUCH HOLD - x: %d, y: %d", tp_.x, tp_.y);
+        ESP_LOGD(TAG, "HOLD - x: %d, y: %d", tp_.x, tp_.y);
     }
 
     // Update previous state

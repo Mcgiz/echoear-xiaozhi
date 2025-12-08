@@ -8,10 +8,11 @@
 #include "config.h"
 #include "backlight.h"
 #include "charge.h"
-#include "cst816s_touch.h"
+#include "touch_cst816s.h"
 #include "base_control.h"
 #include "audio_analysis.h"
 #include "echoear_tools.h"
+#include "touch_sensor.h"
 
 #include <wifi_station.h>
 #include <esp_log.h>
@@ -98,13 +99,7 @@ static const st77916_lcd_init_cmd_t vendor_specific_init_yysj[] = {
     {0x00, (uint8_t []){}, 0, 120},
 };
 
-// PCB version dependent GPIO pins
-gpio_num_t AUDIO_I2S_GPIO_DIN = AUDIO_I2S_GPIO_DIN_1;
-gpio_num_t AUDIO_CODEC_PA_PIN = AUDIO_CODEC_PA_PIN_1;
-gpio_num_t QSPI_PIN_NUM_LCD_RST = QSPI_PIN_NUM_LCD_RST_1;
-gpio_num_t TOUCH_PAD2 = TOUCH_PAD2_1;
-gpio_num_t UART1_TX = UART1_TX_1;
-gpio_num_t UART1_RX = UART1_RX_1;
+// PCB version dependent GPIO pins are now defined via macros in config.h
 
 void EspS3Cat::InitializeI2c()
 {
@@ -127,40 +122,7 @@ void EspS3Cat::InitializeI2c()
     ESP_ERROR_CHECK(temperature_sensor_enable(temp_sensor));
 }
 
-uint8_t EspS3Cat::DetectPcbVersion()
-{
-    esp_err_t ret = i2c_master_probe(i2c_bus_, 0x18, 100);
-    uint8_t pcb_version = 0;
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "PCB version V1.0");
-        pcb_version = 0;
-    } else {
-        gpio_config_t gpio_conf = {
-            .pin_bit_mask = (1ULL << GPIO_NUM_48),
-            .mode = GPIO_MODE_OUTPUT,
-            .pull_up_en = GPIO_PULLUP_DISABLE,
-            .pull_down_en = GPIO_PULLDOWN_DISABLE,
-            .intr_type = GPIO_INTR_DISABLE
-        };
-        ESP_ERROR_CHECK(gpio_config(&gpio_conf));
-        ESP_ERROR_CHECK(gpio_set_level(GPIO_NUM_48, 1));
-        vTaskDelay(pdMS_TO_TICKS(100));
-        ret = i2c_master_probe(i2c_bus_, 0x18, 100);
-        if (ret == ESP_OK) {
-            ESP_LOGI(TAG, "PCB version V1.2");
-            pcb_version = 1;
-            AUDIO_I2S_GPIO_DIN = AUDIO_I2S_GPIO_DIN_2;
-            AUDIO_CODEC_PA_PIN = AUDIO_CODEC_PA_PIN_2;
-            QSPI_PIN_NUM_LCD_RST = QSPI_PIN_NUM_LCD_RST_2;
-            TOUCH_PAD2 = TOUCH_PAD2_2;
-            UART1_TX = UART1_TX_2;
-            UART1_RX = UART1_RX_2;
-        } else {
-            ESP_LOGE(TAG, "PCB version detection error");
-        }
-    }
-    return pcb_version;
-}
+// PCB version detection removed - now using SELECT_BOARD_VERSION macro in config.h
 
 void EspS3Cat::InitializeSpi()
 {
@@ -169,11 +131,11 @@ void EspS3Cat::InitializeSpi()
                                                                               QSPI_PIN_NUM_LCD_DATA1,
                                                                               QSPI_PIN_NUM_LCD_DATA2,
                                                                               QSPI_PIN_NUM_LCD_DATA3,
-                                                                              QSPI_LCD_H_RES * 80 * sizeof(uint16_t));
+                                                                              DISPLAY_WIDTH * 80 * sizeof(uint16_t));
     ESP_ERROR_CHECK(spi_bus_initialize(QSPI_LCD_HOST, &bus_config, SPI_DMA_CH_AUTO));
 }
 
-void EspS3Cat::Initializest77916Display(uint8_t pcb_version)
+void EspS3Cat::Initializest77916Display()
 {
     esp_lcd_panel_io_handle_t panel_io = nullptr;
     esp_lcd_panel_handle_t panel = nullptr;
@@ -192,7 +154,7 @@ void EspS3Cat::Initializest77916Display(uint8_t pcb_version)
         .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
         .bits_per_pixel = QSPI_LCD_BIT_PER_PIXEL,
         .flags = {
-            .reset_active_high = pcb_version,
+            .reset_active_high = QSPI_LCD_RST_ACTIVE_HIGH,
         },
         .vendor_config = &vendor_config,
     };
@@ -232,6 +194,19 @@ void EspS3Cat::InitializeButtons()
     gpio_set_level(POWER_CTRL, 0);
 }
 
+void EspS3Cat::InitializePower()
+{
+#if SELECT_BOARD == PCB_VERSION_V1_2
+    gpio_config_t power_gpio_config;
+    power_gpio_config.mode = GPIO_MODE_OUTPUT;
+    power_gpio_config.pin_bit_mask = BIT64(CORDEC_POWER_CTRL);
+    ESP_ERROR_CHECK(gpio_config(&power_gpio_config));
+    gpio_set_level(CORDEC_POWER_CTRL, 1);  // Enable codec power
+
+    vTaskDelay(pdMS_TO_TICKS(100));
+#endif
+}
+
 void EspS3Cat::InitializeCharge()
 {
     charge_ = new Charge(i2c_bus_, 0x55);
@@ -253,6 +228,18 @@ void EspS3Cat::InitializeCst816sTouchPad()
     gpio_install_isr_service(0);
     gpio_intr_enable(TP_PIN_NUM_INT);
     gpio_isr_handler_add(TP_PIN_NUM_INT, touch_isr_callback, cst816s_);
+}
+
+void EspS3Cat::InitializeTouchSensor()
+{
+    touch_sensor_ = new TouchSensor();
+    if (!touch_sensor_->init()) {
+        ESP_LOGE(TAG, "Failed to initialize touch sensor");
+        delete touch_sensor_;
+        touch_sensor_ = nullptr;
+    } else {
+        ESP_LOGI(TAG, "Touch sensor initialized successfully");
+    }
 }
 
 void EspS3Cat::touch_isr_callback(void* arg)
@@ -295,12 +282,14 @@ void EspS3Cat::touch_event_task(void* arg)
 
 EspS3Cat::EspS3Cat() : boot_button_(BOOT_BUTTON_GPIO)
 {
+    ESP_LOGI(TAG, "EchoEar PCB Version: %d", SELECT_BOARD);
+    InitializePower();
     InitializeI2c();
-    uint8_t pcb_version = DetectPcbVersion();
     InitializeCharge();
     InitializeCst816sTouchPad();
+    InitializeTouchSensor();
     InitializeSpi();
-    Initializest77916Display(pcb_version);
+    Initializest77916Display();
     InitializeButtons();
 
     // Initialize modules

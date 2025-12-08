@@ -5,10 +5,11 @@
 #include "display/display.h"
 #include "backlight.h"
 #include "button.h"
-#include "cst816s_touch.h"
+#include "touch_cst816s.h"
 #include "charge.h"
 #include "base_control.h"
 #include "audio_analysis.h"
+#include "touch_sensor.h"
 #include <functional>
 
 class EspS3Cat : public WifiBoard {
@@ -26,6 +27,10 @@ public:
 
     beat_detection_handle_t GetBeatDetectionHandle() const;
     void SetAudioAnalysisMode(AudioAnalysisMode mode);
+    BaseControl* GetBaseControl()
+    {
+        return base_control_;
+    }
 
 private:
     i2c_master_bus_handle_t i2c_bus_;
@@ -37,14 +42,16 @@ private:
 
     BaseControl* base_control_;
     AudioAnalysis* audio_analysis_;
+    TouchSensor* touch_sensor_;
 
     void InitializeI2c();
-    uint8_t DetectPcbVersion();
     void InitializeSpi();
-    void Initializest77916Display(uint8_t pcb_version);
+    void Initializest77916Display();
     void InitializeButtons();
     void InitializeCharge();
     void InitializeCst816sTouchPad();
+    void InitializeTouchSensor();
+    void InitializePower();
 
     static void touch_isr_callback(void* arg);
     static void touch_event_task(void* arg);
