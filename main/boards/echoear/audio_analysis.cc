@@ -104,8 +104,8 @@ void AudioAnalysis::DoaTrackerResultCallback(float angle, void *ctx)
         app->last_callback_time = xTaskGetTickCount();
     } else {
         if (xTaskGetTickCount() - app->last_callback_time > pdMS_TO_TICKS(500)) {
-            ESP_LOGI(TAG, "Estimated direction: %.2f", angle);
-            echo_base_control_set_angle(angle);
+            ESP_LOGI(TAG, "Direction: %.2f", angle);
+            // echo_base_control_set_angle(angle);
             app->last_callback_time = xTaskGetTickCount();
         }
     }

@@ -89,12 +89,14 @@ void BaseControl::HandleCommand(uint8_t cmd, uint8_t *data, int data_len)
             case ECHO_BASE_CMD_RECV_SWITCH_SLIDE_DOWN:
                 // display->SetStatus("status_IDLE");
                 // display->SetEmotion("happy");
-                app.SetDeviceState(kDeviceStateListening);
+                // app.SetDeviceState(kDeviceStateListening);
+                ESP_LOGI(TAG, "Slide switch down");
                 break;
             case ECHO_BASE_CMD_RECV_SWITCH_SLIDE_UP:
                 // display->SetStatus("status_IDLE");
                 // display->SetEmotion("sleepy");
-                app.SetDeviceState(kDeviceStateIdle);
+                // app.SetDeviceState(kDeviceStateIdle);
+                ESP_LOGI(TAG, "Slide switch up");
                 break;
             default:
                 ESP_LOGI(TAG, "Slide switch event: %d", event);
@@ -122,6 +124,7 @@ void BaseControl::HandleCommand(uint8_t cmd, uint8_t *data, int data_len)
     }
     case ECHO_BASE_CMD_RECV_HEARTBEAT: {
         uint16_t event = (data[0] << 8) | data[1];
+        // ESP_LOGI(TAG, "Heartbeat event: %d", event);
         switch (event) {
         case ECHO_BASE_CMD_RECV_HEARTBEAT_ALIVE: {
             int64_t current_time = esp_timer_get_time() / 1000;  // Convert to milliseconds
@@ -135,7 +138,7 @@ void BaseControl::HandleCommand(uint8_t cmd, uint8_t *data, int data_len)
 
                 emote::EmoteDisplay* emote_display = dynamic_cast<emote::EmoteDisplay*>(display);
                 if (emote_display != nullptr) {
-                    emote_display->InsertAnimDialog("insert", 3000);  // 5 seconds animation
+                    emote_display->InsertAnimDialog("insert", 3000);
                 }
             }
             break;

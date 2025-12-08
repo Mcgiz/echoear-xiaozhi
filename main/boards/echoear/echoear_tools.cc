@@ -67,11 +67,9 @@ void EchoEarTools::Initialize(EspS3Cat* board)
             analysis_mode = AudioAnalysisMode::BEAT_DETECTION;
         } else if (mode == "doa_follow") {
             analysis_mode = AudioAnalysisMode::DOA_FOLLOW;
-        } else if (mode == "disabled")
-        {
+        } else if (mode == "disabled") {
             analysis_mode = AudioAnalysisMode::DISABLED;
-        } else
-        {
+        } else {
             ESP_LOGE(TAG, "Unknown audio analysis mode: %s", mode.c_str());
             return false;
         }
