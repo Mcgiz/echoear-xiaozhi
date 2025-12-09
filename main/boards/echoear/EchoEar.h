@@ -6,6 +6,7 @@
 #include "backlight.h"
 #include "button.h"
 #include "touch_cst816s.h"
+#include <esp_lcd_touch.h>
 #include "charge.h"
 #include "base_control.h"
 #include "audio_analysis.h"
@@ -19,7 +20,7 @@ public:
     virtual AudioCodec* GetAudioCodec() override;
     virtual Display* GetDisplay() override;
     virtual Backlight* GetBacklight() override;
-    Cst816s* GetTouchpad();
+    esp_lcd_touch_handle_t GetTouchpad();
 
     virtual void SetAfeDataProcessCallback(std::function<void(const int16_t* audio_data, size_t total_bytes)> callback) override;
     virtual void SetVadStateChangeCallback(std::function<void(bool speaking)> callback) override;
@@ -34,7 +35,7 @@ public:
 
 private:
     i2c_master_bus_handle_t i2c_bus_;
-    Cst816s* cst816s_;
+    esp_lcd_touch_handle_t cst816s_ = nullptr;
     Charge* charge_;
     Button boot_button_;
     Display* display_;
@@ -52,9 +53,7 @@ private:
     void InitializeCst816sTouchPad();
     void InitializeTouchSensor();
     void InitializePower();
-
-    static void touch_isr_callback(void* arg);
-    static void touch_event_task(void* arg);
+    // void create_control_ui();
 };
 
 #endif // ECHOEAR_H

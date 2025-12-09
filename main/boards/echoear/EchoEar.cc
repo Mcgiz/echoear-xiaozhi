@@ -9,6 +9,9 @@
 #include "backlight.h"
 #include "charge.h"
 #include "touch_cst816s.h"
+#include <esp_lcd_touch.h>
+#include <esp_lv_adapter.h>
+#include <lvgl.h>
 #include "base_control.h"
 #include "audio_analysis.h"
 #include "echoear_tools.h"
@@ -20,6 +23,7 @@
 #include <driver/i2c.h>
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
+#include <esp_psram.h>
 #include <esp_lcd_st77916.h>
 #include <driver/temperature_sensor.h>
 #include <freertos/FreeRTOS.h>
@@ -135,6 +139,116 @@ void EspS3Cat::InitializeSpi()
     ESP_ERROR_CHECK(spi_bus_initialize(QSPI_LCD_HOST, &bus_config, SPI_DMA_CH_AUTO));
 }
 
+
+static uint8_t dummy_count = 0; 
+static void screen_touch_event_cb(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
+        return;
+    }
+
+    lv_display_t *disp = lv_display_get_default();
+    if (disp == nullptr) {
+        return;
+    }
+    
+    ESP_LOGI(TAG, "Clicked, %s", dummy_count%2 ? "true" : "false");
+
+    esp_lv_adapter_set_dummy_draw(disp, dummy_count%2);
+    dummy_count++;
+}
+
+void create_customer_ui()
+{
+    lv_display_t *disp = lv_display_get_default();
+    if (disp == nullptr) {
+        ESP_LOGE(TAG, "Display not initialized");
+        return;
+    }
+
+    lv_obj_t *scr = lv_disp_get_scr_act(disp);
+    lv_obj_set_style_bg_color(scr, lv_color_hex(0x202020), 0);
+
+    lv_obj_t *info_label = lv_label_create(scr);
+    lv_obj_set_style_text_color(info_label, lv_color_hex(0xFF0000), 0);
+    lv_obj_set_style_text_align(info_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(info_label, LV_ALIGN_CENTER, 0, 0);
+
+    lv_obj_t *dummy_touch_layer = lv_obj_create(scr);
+    lv_obj_remove_style_all(dummy_touch_layer);
+    lv_obj_set_size(dummy_touch_layer, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_pos(dummy_touch_layer, 0, 0);
+    lv_obj_set_style_bg_opa(dummy_touch_layer, LV_OPA_TRANSP, 0);
+    lv_obj_clear_flag(dummy_touch_layer, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(dummy_touch_layer, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(dummy_touch_layer, screen_touch_event_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_move_foreground(info_label);
+
+    lv_label_set_text_fmt(info_label, "Tap to start\n%dx%d", DISPLAY_WIDTH, DISPLAY_HEIGHT);
+    ESP_LOGI(TAG, "UI created for %dx%d", DISPLAY_WIDTH, DISPLAY_HEIGHT);
+}
+
+void start_lvgl(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
+                             int width, int height, int offset_x, int offset_y, bool mirror_x, bool mirror_y, bool swap_xy)
+{
+
+// Set the display to on
+    ESP_LOGI(TAG, "Turning display on");
+    {
+        esp_err_t __err = esp_lcd_panel_disp_on_off(panel, true);
+        if (__err == ESP_ERR_NOT_SUPPORTED) {
+            ESP_LOGW(TAG, "Panel does not support disp_on_off; assuming ON");
+        } else {
+            ESP_ERROR_CHECK(__err);
+        }
+    }
+
+    ESP_LOGI(TAG, "Initialize LVGL library");
+    lv_init();
+
+#if CONFIG_SPIRAM
+// lv image cache, currently only PNG is supported
+    size_t psram_size_mb = esp_psram_get_size() / 1024 / 1024;
+    if (psram_size_mb >= 8) {
+        lv_image_cache_resize(2 * 1024 * 1024, true);
+        ESP_LOGI(TAG, "Use 2MB of PSRAM for image cache");
+    } else if (psram_size_mb >= 2) {
+        lv_image_cache_resize(512 * 1024, true);
+        ESP_LOGI(TAG, "Use 512KB of PSRAM for image cache");
+    }
+#endif
+
+    ESP_LOGI(TAG, "Initializing LVGL adapter, width:%d, height:%d", width, height);
+    const esp_lv_adapter_config_t adapter_config = ESP_LV_ADAPTER_DEFAULT_CONFIG();
+    ESP_ERROR_CHECK(esp_lv_adapter_init(&adapter_config));
+
+    esp_lv_adapter_display_config_t display_config = ESP_LV_ADAPTER_DISPLAY_SPI_WITH_PSRAM_DEFAULT_CONFIG(
+                                                         panel,
+                                                         panel_io,
+                                                         static_cast<uint16_t>(width),
+                                                         static_cast<uint16_t>(height),
+                                                         ESP_LV_ADAPTER_ROTATE_0);
+    display_config.profile.use_psram = false;
+    display_config.profile.buffer_height = 20;
+
+    lv_display_t *display_ = esp_lv_adapter_register_display(&display_config);
+    if (display_ == nullptr) {
+        ESP_LOGE(TAG, "Failed to add display");
+        return;
+    }
+
+    if (offset_x != 0 || offset_y != 0) {
+        lv_display_set_offset(display_, offset_x, offset_y);
+    }
+
+    ESP_LOGI(TAG, "Starting LVGL adapter");
+    esp_lv_adapter_start();
+    esp_lv_adapter_set_dummy_draw(display_, false);
+
+    create_customer_ui();
+}
+
 void EspS3Cat::Initializest77916Display()
 {
     esp_lcd_panel_io_handle_t panel_io = nullptr;
@@ -166,8 +280,11 @@ void EspS3Cat::Initializest77916Display()
     esp_lcd_panel_swap_xy(panel, DISPLAY_SWAP_XY);
     esp_lcd_panel_mirror(panel, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
 
-#if CONFIG_USE_EMOTE_MESSAGE_STYLE
+#if 1
+// #if CONFIG_USE_EMOTE_MESSAGE_STYLE
     display_ = new emote::EmoteDisplay(panel, panel_io, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+
+    start_lvgl(panel_io, panel, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
 #else
     display_ = new SpiLcdDisplay(panel_io, panel,
                                  DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
@@ -215,19 +332,35 @@ void EspS3Cat::InitializeCharge()
 
 void EspS3Cat::InitializeCst816sTouchPad()
 {
-    cst816s_ = new Cst816s(i2c_bus_, 0x15);
+    esp_err_t ret = cst816s_touch_init(i2c_bus_,
+                                       DISPLAY_WIDTH,
+                                       DISPLAY_HEIGHT,
+                                       DISPLAY_SWAP_XY,
+                                       DISPLAY_MIRROR_X,
+                                       DISPLAY_MIRROR_Y,
+                                       &cst816s_);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize CST816S touch controller: %s", esp_err_to_name(ret));
+        cst816s_ = nullptr;
+        return;
+    }
 
-    xTaskCreatePinnedToCore(touch_event_task, "touch_task", 4 * 1024, cst816s_, 5, NULL, 1);
+    // Register touch with LVGL adapter
+    // Note: This should be called after display is initialized
+    lv_display_t *disp = lv_display_get_default();
+    if (disp == nullptr) {
+        ESP_LOGW(TAG, "Display not initialized yet, touch will be registered later");
+        return;
+    }
 
-    const gpio_config_t int_gpio_config = {
-        .pin_bit_mask = (1ULL << TP_PIN_NUM_INT),
-        .mode = GPIO_MODE_INPUT,
-        .intr_type = GPIO_INTR_ANYEDGE
-    };
-    gpio_config(&int_gpio_config);
-    gpio_install_isr_service(0);
-    gpio_intr_enable(TP_PIN_NUM_INT);
-    gpio_isr_handler_add(TP_PIN_NUM_INT, touch_isr_callback, cst816s_);
+    esp_lv_adapter_touch_config_t touch_config = ESP_LV_ADAPTER_TOUCH_DEFAULT_CONFIG(disp, cst816s_);
+    lv_indev_t *touch = esp_lv_adapter_register_touch(&touch_config);
+    if (touch == nullptr) {
+        ESP_LOGE(TAG, "Touch registration failed");
+        return;
+    }
+
+    ESP_LOGI(TAG, "Touch registered successfully");
 }
 
 void EspS3Cat::InitializeTouchSensor()
@@ -239,44 +372,6 @@ void EspS3Cat::InitializeTouchSensor()
         touch_sensor_ = nullptr;
     } else {
         ESP_LOGI(TAG, "Touch sensor initialized successfully");
-    }
-}
-
-void EspS3Cat::touch_isr_callback(void* arg)
-{
-    Cst816s* touchpad = static_cast<Cst816s*>(arg);
-    if (touchpad != nullptr) {
-        touchpad->NotifyTouchEvent();
-    }
-}
-
-void EspS3Cat::touch_event_task(void* arg)
-{
-    Cst816s* touchpad = static_cast<Cst816s*>(arg);
-    if (touchpad == nullptr) {
-        ESP_LOGE(TAG, "Invalid touchpad pointer in touch_event_task");
-        vTaskDelete(NULL);
-        return;
-    }
-
-    while (true) {
-        if (touchpad->WaitForTouchEvent()) {
-            auto &app = Application::GetInstance();
-            auto &board = (EspS3Cat &)Board::GetInstance();
-
-            ESP_LOGD(TAG, "Touch event, TP_PIN_NUM_INT: %d", gpio_get_level(TP_PIN_NUM_INT));
-            touchpad->UpdateTouchPoint();
-            auto touch_event = touchpad->CheckTouchEvent();
-
-            if (touch_event == Cst816s::TOUCH_RELEASE) {
-                if (app.GetDeviceState() == kDeviceStateStarting &&
-                        !WifiStation::GetInstance().IsConnected()) {
-                    board.ResetWifiConfiguration();
-                } else {
-                    app.ToggleChatState();
-                }
-            }
-        }
     }
 }
 
@@ -325,7 +420,7 @@ Display* EspS3Cat::GetDisplay()
     return display_;
 }
 
-Cst816s* EspS3Cat::GetTouchpad()
+esp_lcd_touch_handle_t EspS3Cat::GetTouchpad()
 {
     return cst816s_;
 }
