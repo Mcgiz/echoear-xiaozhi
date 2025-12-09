@@ -569,7 +569,7 @@ elseif(CONFIG_BOARD_TYPE_HU_087)
     set(BUILTIN_ICON_FONT font_awesome_14_1)
 endif()
 
-file(GLOB BOARD_SOURCES
+file(GLOB_RECURSE BOARD_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD_TYPE}/*.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/boards/${BOARD_TYPE}/*.c
 )
@@ -928,3 +928,10 @@ if ("${size}" AND "${offset}")
 else()
     message(STATUS "Assets partition not found, using v1 partition table")
 endif()
+
+spiffs_create_partition_assets(
+    storage
+    "../assets"
+    MMAP_FILE_SUPPORT_FORMAT ".eaf"
+    FLASH_IN_PROJECT
+)

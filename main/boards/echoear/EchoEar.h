@@ -35,7 +35,7 @@ public:
 
 private:
     i2c_master_bus_handle_t i2c_bus_;
-    esp_lcd_touch_handle_t cst816s_ = nullptr;
+    Cst816sTouch* cst816s_touch_ = nullptr;
     Charge* charge_;
     Button boot_button_;
     Display* display_;

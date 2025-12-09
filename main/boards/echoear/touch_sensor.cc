@@ -42,13 +42,13 @@ static void touch_btn_event_cb(void *button_handle, void *usr_data)
     button_event_t event = iot_button_get_event((button_handle_t)button_handle);
     switch (event) {
     case BUTTON_PRESS_DOWN:
-        ESP_LOGI(TAG, "Press down");
+        ESP_LOGD(TAG, "Press down");
         break;
     case BUTTON_PRESS_UP:
-        ESP_LOGI(TAG, "Press up");
+        ESP_LOGD(TAG, "Press up");
         break;
     case BUTTON_SINGLE_CLICK:
-        ESP_LOGI(TAG, "Single click");
+        ESP_LOGD(TAG, "Single click");
         break;
     case BUTTON_LONG_PRESS_START: {
         ESP_LOGI(TAG, "Long press started");
@@ -56,7 +56,7 @@ static void touch_btn_event_cb(void *button_handle, void *usr_data)
         if (display == nullptr) {
             return;
         }
-        std::string wake_word = "我在抚摸你";
+        std::string wake_word = "我在摸你猫头";
         Application::GetInstance().WakeWordInvoke(wake_word);
         break;
     }

@@ -84,7 +84,7 @@ void BaseControl::HandleCommand(uint8_t cmd, uint8_t *data, int data_len)
         return;
     }
 
-    if(cmd != ECHO_BASE_CMD_RECV_HEARTBEAT) {
+    if (cmd != ECHO_BASE_CMD_RECV_HEARTBEAT) {
         printf("Handle: cmd=%02X, ", cmd);
         for (int i = 0; i < data_len; i++) {
             printf("%02X ", data[i]);

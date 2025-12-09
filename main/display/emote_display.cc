@@ -218,7 +218,8 @@ static void InitializeGraphics(const esp_lcd_panel_handle_t panel, gfx_handle_t*
         .flags = {
             .swap = true,
             .double_buffer = true,
-            .buff_dma = true,
+            .buff_dma = false,
+            .buff_spiram = true,
         },
         .h_res = static_cast<uint32_t>(width),
         .v_res = static_cast<uint32_t>(height),
@@ -413,21 +414,32 @@ void EmoteEngine::OnDialogTimer(void* user_ctx)
     }
 }
 
+#if 1
 void EmoteEngine::OnFlush(const gfx_handle_t handle, const int x_start, const int y_start,
                           const int x_end, const int y_end, const void* const color_data)
 {   
-    // Get the default display handle
     lv_display_t *disp = lv_display_get_default();
     if (disp != nullptr) {
         bool state = esp_lv_adapter_get_dummy_draw_enabled(disp);
         if (state) {
             esp_lv_adapter_dummy_draw_blit(
                 disp, x_start, y_start, x_end, y_end, color_data, true);
+            gfx_emote_flush_ready(handle, true);
         }
+    }
+    // gfx_emote_flush_ready(handle, true);
+}
+#else
+void EmoteEngine::OnFlush(const gfx_handle_t handle, const int x_start, const int y_start,
+    const int x_end, const int y_end, const void* const color_data)
+{
+    auto* const panel = static_cast<esp_lcd_panel_handle_t>(gfx_emote_get_user_data(handle));
+    if (panel) {
+    esp_lcd_panel_draw_bitmap(panel, x_start, y_start, x_end, y_end, color_data);
     }
     gfx_emote_flush_ready(handle, true);
 }
-
+#endif
 // ============================================================================
 // EmoteDisplay Class Implementation
 // ============================================================================
