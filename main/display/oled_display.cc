@@ -8,7 +8,7 @@
 
 #include <esp_log.h>
 #include <esp_err.h>
-#include <esp_lvgl_port.h>
+#include <esp_lv_adapter.h>
 #include <font_awesome.h>
 
 #define TAG "OledDisplay"
@@ -37,44 +37,44 @@ OledDisplay::OledDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handl
     current_theme_ = dark_theme;
 
     ESP_LOGI(TAG, "Initialize LVGL");
-    lvgl_port_cfg_t port_cfg = ESP_LVGL_PORT_INIT_CONFIG();
-    port_cfg.task_priority = 1;
-    port_cfg.task_stack = 6144;
-#if CONFIG_SOC_CPU_CORES_NUM > 1
-    port_cfg.task_affinity = 1;
-#endif
-    lvgl_port_init(&port_cfg);
+//     lvgl_port_cfg_t port_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+//     port_cfg.task_priority = 1;
+//     port_cfg.task_stack = 6144;
+// #if CONFIG_SOC_CPU_CORES_NUM > 1
+//     port_cfg.task_affinity = 1;
+// #endif
+//     lvgl_port_init(&port_cfg);
 
-    ESP_LOGI(TAG, "Adding OLED display");
-    const lvgl_port_display_cfg_t display_cfg = {
-        .io_handle = panel_io_,
-        .panel_handle = panel_,
-        .control_handle = nullptr,
-        .buffer_size = static_cast<uint32_t>(width_ * height_),
-        .double_buffer = false,
-        .trans_size = 0,
-        .hres = static_cast<uint32_t>(width_),
-        .vres = static_cast<uint32_t>(height_),
-        .monochrome = true,
-        .rotation = {
-            .swap_xy = false,
-            .mirror_x = mirror_x,
-            .mirror_y = mirror_y,
-        },
-        .flags = {
-            .buff_dma = 1,
-            .buff_spiram = 0,
-            .sw_rotate = 0,
-            .full_refresh = 0,
-            .direct_mode = 0,
-        },
-    };
+//     ESP_LOGI(TAG, "Adding OLED display");
+//     const lvgl_port_display_cfg_t display_cfg = {
+//         .io_handle = panel_io_,
+//         .panel_handle = panel_,
+//         .control_handle = nullptr,
+//         .buffer_size = static_cast<uint32_t>(width_ * height_),
+//         .double_buffer = false,
+//         .trans_size = 0,
+//         .hres = static_cast<uint32_t>(width_),
+//         .vres = static_cast<uint32_t>(height_),
+//         .monochrome = true,
+//         .rotation = {
+//             .swap_xy = false,
+//             .mirror_x = mirror_x,
+//             .mirror_y = mirror_y,
+//         },
+//         .flags = {
+//             .buff_dma = 1,
+//             .buff_spiram = 0,
+//             .sw_rotate = 0,
+//             .full_refresh = 0,
+//             .direct_mode = 0,
+//         },
+//     };
 
-    display_ = lvgl_port_add_disp(&display_cfg);
-    if (display_ == nullptr) {
-        ESP_LOGE(TAG, "Failed to add display");
-        return;
-    }
+    // display_ = lvgl_port_add_disp(&display_cfg);
+    // if (display_ == nullptr) {
+    //     ESP_LOGE(TAG, "Failed to add display");
+    //     return;
+    // }
 
     if (height_ == 64) {
         SetupUI_128x64();
@@ -120,15 +120,15 @@ OledDisplay::~OledDisplay() {
     if (panel_io_ != nullptr) {
         esp_lcd_panel_io_del(panel_io_);
     }
-    lvgl_port_deinit();
+    esp_lv_adapter_deinit();
 }
 
 bool OledDisplay::Lock(int timeout_ms) {
-    return lvgl_port_lock(timeout_ms);
+    return esp_lv_adapter_lock(timeout_ms);
 }
 
 void OledDisplay::Unlock() {
-    lvgl_port_unlock();
+    esp_lv_adapter_unlock();
 }
 
 void OledDisplay::SetChatMessage(const char* role, const char* content) {

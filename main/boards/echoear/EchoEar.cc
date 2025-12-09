@@ -286,11 +286,11 @@ EspS3Cat::EspS3Cat() : boot_button_(BOOT_BUTTON_GPIO)
     InitializePower();
     InitializeI2c();
     InitializeCharge();
-    InitializeCst816sTouchPad();
-    InitializeTouchSensor();
     InitializeSpi();
     Initializest77916Display();
     InitializeButtons();
+    InitializeCst816sTouchPad();
+    InitializeTouchSensor();
 
     // Initialize modules
     base_control_ = new BaseControl(this);

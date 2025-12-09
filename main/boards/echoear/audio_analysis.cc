@@ -31,28 +31,15 @@ void AudioAnalysis::Initialize()
     // AudioCodec* codec = Board::GetInstance().GetAudioCodec();
     // int channel_count = codec != nullptr ? codec->input_channels() : 1;
     // ESP_LOGI(TAG, "Initializing audio analysis with %d channels", channel_count);
-
     int channel_count = 2;
 
-    // Initialize beat detection
-    beat_detection_cfg_t beat_cfg = {
-        .sample_rate = BEAT_DETECTION_DEFAULT_SAMPLE_RATE,
-        .channel = static_cast<uint8_t>(channel_count),
-        .fft_size = BEAT_DETECTION_DEFAULT_FFT_SIZE,
-        .bass_freq_start = static_cast<uint16_t>(BEAT_DETECTION_DEFAULT_BASS_FREQ_MIN),
-        .bass_freq_end = static_cast<uint16_t>(BEAT_DETECTION_DEFAULT_BASS_FREQ_MAX),
-        .bass_surge_threshold = BEAT_DETECTION_DEFAULT_BASS_SURGE_THRESHOLD,
-        .task_priority = BEAT_DETECTION_DEFAULT_TASK_PRIORITY,
-        .task_stack_size = BEAT_DETECTION_DEFAULT_TASK_STACK_SIZE,
-        .task_core_id = BEAT_DETECTION_DEFAULT_TASK_CORE_ID,
-        .result_callback = reinterpret_cast<void*>(BeatDetectionResultCallback),
-        .result_callback_ctx = this,
-        .flags = {
-            .enable_psram = false,
-        }
-    };
+    beat_detection_cfg_t cfg = BEAT_DETECTION_DEFAULT_CFG();
+    cfg.audio_cfg.channel = 2;    // 2 channels
+    cfg.result_callback = BeatDetectionResultCallback;
+    cfg.result_callback_ctx = this;
+    cfg.flags.enable_psram = false;
 
-    esp_err_t ret = beat_detection_init(&beat_cfg, &beat_detection_handle_);
+    esp_err_t ret = beat_detection_init(&cfg, &beat_detection_handle_);
     if (ret != ESP_OK || beat_detection_handle_ == nullptr) {
         ESP_LOGE(TAG, "Failed to initialize beat detection: %d", ret);
     } else {
@@ -100,17 +87,8 @@ void AudioAnalysis::DoaTrackerResultCallback(float angle, void *ctx)
         ESP_LOGE(TAG, "audio_doa_tracker_result_callback: app is NULL");
         return;
     }
-    // if (app->last_callback_time == 0) {
-    //     app->last_callback_time = xTaskGetTickCount();
-    // } else {
-    //     if (xTaskGetTickCount() - app->last_callback_time > pdMS_TO_TICKS(500)) {
-    //         ESP_LOGI(TAG, "Direction: %.2f", angle);
-    //         echo_base_control_set_angle(angle);
-    //         app->last_callback_time = xTaskGetTickCount();
-    //     }
-    // }
-    ESP_LOGI(TAG, "Estimated direction: %.2f", angle);
-    echo_base_control_set_angle(angle);
+    // ESP_LOGI(TAG, "Estimated direction: %.2f", angle);
+    // echo_base_control_set_angle(angle);
 }
 
 void AudioAnalysis::SetAfeDataProcessCallback()
@@ -175,12 +153,12 @@ void AudioAnalysis::OnAudioDataProcessed(const int16_t* audio_data, size_t bytes
     switch (mode_) {
     case AudioAnalysisMode::BEAT_DETECTION:
         // Feed to beat detection
-        if (beat_detection_handle_ != nullptr && beat_detection_handle_->feed_audio != nullptr) {
+        if (beat_detection_handle_ != nullptr) {
             beat_detection_audio_buffer_t buffer = {
-                .audio_buffer = (uint8_t*)audio_data,
-                .bytes_size = bytes_per_channel * channels
+                .audio_buffer = (uint8_t *)audio_data,
+                .bytes_size = bytes_per_channel * channels,
             };
-            beat_detection_handle_->feed_audio(buffer, beat_detection_handle_->feed_audio_ctx);
+            beat_detection_data_write(beat_detection_handle_, buffer);
         }
         break;
 

@@ -6,7 +6,7 @@
 
 #include <esp_log.h>
 #include <esp_sleep.h>
-#include <esp_lvgl_port.h>
+#include <esp_lv_adapter.h>
 
 #define TAG "SleepTimer"
 
@@ -90,14 +90,14 @@ void SleepTimer::CheckTimer() {
                     auto& board = Board::GetInstance();
                     board.GetDisplay()->UpdateStatusBar(true);
                     lv_refr_now(nullptr);
-                    lvgl_port_stop();
+                    // lvgl_port_stop();
     
                     // 配置timer唤醒源（30秒后自动唤醒）
                     esp_sleep_enable_timer_wakeup(30 * 1000000);
                     
                     // 进入light sleep模式
                     esp_light_sleep_start();
-                    lvgl_port_resume();
+                    // lvgl_port_resume();
 
                     auto wakeup_reason = esp_sleep_get_wakeup_cause();
                     ESP_LOGI(TAG, "Wake up from light sleep, wakeup_reason: %d", wakeup_reason);

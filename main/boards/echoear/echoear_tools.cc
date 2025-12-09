@@ -44,10 +44,6 @@ void EchoEarTools::Initialize(EspS3Cat* board)
         } else if (action == "calibrate")
         {
             echo_base_control_set_calibrate();
-
-            Display* display = Board::GetInstance().GetDisplay();
-            display->SetChatMessage("system", Lang::Strings::CALIBRATING_STEP1);
-
             BaseControl* base_control = board->GetBaseControl();
             if (base_control != nullptr) {
                 bool completed = base_control->WaitForCalibrationComplete(30000);

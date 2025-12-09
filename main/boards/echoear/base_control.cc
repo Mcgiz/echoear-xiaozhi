@@ -107,12 +107,16 @@ void BaseControl::HandleCommand(uint8_t cmd, uint8_t *data, int data_len)
                 ESP_LOGI(TAG, "Slide switch up");
                 app.ToggleChatState();
                 break;
+            case ECHO_BASE_CMD_RECV_CALIBRATE_START:
+                ESP_LOGI(TAG, "Calibrate start");
+                display->SetChatMessage("system", Lang::Strings::CALIBRATING_STEP1);
+                break;
             case ECHO_BASE_CMD_RECV_CALIBRATE_STEP1:
-                ESP_LOGI(TAG, "Calibrate step 1");
+                ESP_LOGI(TAG, "Calibrate step 1 Done");
                 display->SetChatMessage("system", Lang::Strings::CALIBRATING_STEP2);
                 break;
             case ECHO_BASE_CMD_RECV_CALIBRATE_STEP2:
-                ESP_LOGI(TAG, "Calibrate step 2");
+                ESP_LOGI(TAG, "Calibrate step 2 Done");
                 display->SetChatMessage("system", Lang::Strings::CALIBRATING_STEP3);
                 if (calibrate_semaphore_ != nullptr) {
                     xSemaphoreGive(calibrate_semaphore_);
