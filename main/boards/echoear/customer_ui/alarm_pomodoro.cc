@@ -439,7 +439,7 @@ void alarm_pomodoro_create_with_parent(lv_obj_t *parent)
     lv_obj_set_style_shadow_opa(s_pomodoro_ui.toggle_btn, LV_OPA_TRANSP, 0);
     lv_obj_set_style_outline_opa(s_pomodoro_ui.toggle_btn, LV_OPA_TRANSP, 0);
     lv_obj_clear_flag(s_pomodoro_ui.toggle_btn, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(s_pomodoro_ui.toggle_btn, toggle_btn_event_handler, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(s_pomodoro_ui.toggle_btn, toggle_btn_event_handler, LV_EVENT_LONG_PRESSED, NULL);
     /* Also enable swipe on toggle button */
     lv_obj_add_event_cb(s_pomodoro_ui.toggle_btn, main_ui_swipe_event_cb, LV_EVENT_ALL, NULL);
 
