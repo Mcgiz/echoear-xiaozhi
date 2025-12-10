@@ -47,7 +47,7 @@ bool Cst816sTouch::init(int width,
         return false;
     }
 
-    vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(100));
 
     // Initialize CST816S touch controller
     ret = esp_lcd_touch_new_i2c_cst816s(tp_io_handle, &tp_cfg, &handle_);
