@@ -47,6 +47,9 @@ static lv_obj_t *container_time_up = NULL;
 /* Current page state */
 static main_ui_page_t s_current_page = MAIN_UI_PAGE_DUMMY;
 
+/* Cached display pointer to avoid repeated Board::GetInstance() calls */
+static emote::EmoteDisplay *s_cached_emote_display = nullptr;
+
 /* Swipe detection state */
 static bool s_swipe_active = false;
 static bool s_swipe_handled = false;
@@ -57,7 +60,7 @@ static lv_coord_t s_swipe_start_y = 0;
 // Global Variables
 // ============================================================================
 
-mmap_assets_handle_t asset_handle;
+static mmap_assets_handle_t asset_handle;
 
 // ============================================================================
 // Forward Declarations
@@ -95,23 +98,26 @@ void main_ui_swipe_event_cb(lv_event_t *e)
     page_gesture_event_cb(e);
 }
 
-static void main_ui_trigger_emote_all_refresh(void)
+static void main_ui_invalid_emote(void)
 {
-    Display *base_display = Board::GetInstance().GetDisplay();
-    if (!base_display) {
-        ESP_LOGI(TAG, "Refresh all: base_display is nullptr");
-        return;
+    /* Use cached display pointer to avoid Board::GetInstance() call which may block */
+    if (s_cached_emote_display == nullptr) {
+        /* Cache the display pointer on first call (when not in critical section) */
+        Display *base_display = Board::GetInstance().GetDisplay();
+        if (!base_display) {
+            ESP_LOGI(TAG, "Refresh all: base_display is nullptr");
+            return;
+        }
+        s_cached_emote_display = dynamic_cast<emote::EmoteDisplay *>(base_display);
+        if (!s_cached_emote_display) {
+            ESP_LOGI(TAG, "Refresh all: emote_display is nullptr");
+            return;
+        }
     }
-
-    auto *emote_display = dynamic_cast<emote::EmoteDisplay *>(base_display);
-    if (!emote_display) {
-        ESP_LOGI(TAG, "Refresh all: emote_display is nullptr");
-        return;
+    
+    if (s_cached_emote_display) {
+        s_cached_emote_display->RefreshAll();
     }
-
-    ESP_LOGI(TAG, "Refresh all: emote_display is not nullptr");
-    emote_display->RefreshAll();
-    ESP_LOGI(TAG, "Refresh done");
 }
 
 static void main_ui_switch_page(main_ui_page_t page)
@@ -122,14 +128,10 @@ static void main_ui_switch_page(main_ui_page_t page)
     esp_lv_adapter_lock(-1);
 
     lv_display_t *disp = lv_display_get_default();
+    bool enable_dummy = false;
     if (disp != nullptr) {
-        bool enable_dummy = (page == MAIN_UI_PAGE_DUMMY);
+        enable_dummy = (page == MAIN_UI_PAGE_DUMMY);
         esp_lv_adapter_set_dummy_draw(disp, enable_dummy);
-        // if (enable_dummy) {
-        //     ESP_LOGI(TAG, "Emote all refresh");
-        //     main_ui_trigger_emote_all_refresh();
-        //     ESP_LOGI(TAG, "Refresh done");
-        // }
     }
 
     /* Control visibility of each full-screen container */
@@ -166,6 +168,13 @@ static void main_ui_switch_page(main_ui_page_t page)
     }
 
     esp_lv_adapter_unlock();
+
+    /* Call RefreshAll() outside the lock to avoid deadlock */
+    if (enable_dummy) {
+        ESP_LOGI(TAG, "Emote all refresh");
+        main_ui_invalid_emote();
+        ESP_LOGI(TAG, "Refresh done");
+    }
 }
 
 static void create_emote_ui_layer(void)
@@ -306,7 +315,7 @@ static void page_gesture_event_cb(lv_event_t *e)
     }
 }
 
-void create_main_ui(void)
+void create_main_ui(Display *display)
 {
     main_ui_init_assets();
 
@@ -322,21 +331,30 @@ void create_main_ui(void)
     create_alarm_containers();
     create_emote_ui_layer();
 
+    /* Initialize cached display pointer from the passed parameter */
+    /* This is the display created in EspS3Cat::Initializest77916Display() */
+    if (display) {
+        s_cached_emote_display = dynamic_cast<emote::EmoteDisplay *>(display);
+        if (s_cached_emote_display) {
+            ESP_LOGI(TAG, "Cached emote display pointer: %p", (void*)s_cached_emote_display);
+        } else {
+            ESP_LOGW(TAG, "Failed to cast display to EmoteDisplay, got type: %s", typeid(*display).name());
+        }
+    } else {
+        ESP_LOGW(TAG, "Display parameter is nullptr during initialization!");
+    }
+
     /* Default entry page: dummy monitor */
     main_ui_switch_page(MAIN_UI_PAGE_DUMMY);
-
-    ESP_LOGI(TAG, "Main UI created");
 }
 
 void alarm_pomodoro_show(void)
 {
-    ESP_LOGI(TAG, "Pomodoro timer UI shown");
     main_ui_switch_page(MAIN_UI_PAGE_POMODORO);
 }
 
 void alarm_pomodoro_hide(void)
 {
-    ESP_LOGI(TAG, "Pomodoro timer UI hidden");
     esp_lv_adapter_lock(-1);
     if (container_pomodoro) {
         lv_obj_add_flag(container_pomodoro, LV_OBJ_FLAG_HIDDEN);
@@ -346,13 +364,11 @@ void alarm_pomodoro_hide(void)
 
 void alarm_time_up_show(void)
 {
-    ESP_LOGI(TAG, "Alarm time up UI shown");
     main_ui_switch_page(MAIN_UI_PAGE_TIME_UP);
 }
 
 void alarm_time_up_hide(void)
 {
-    ESP_LOGI(TAG, "Alarm time up UI hidden");
     esp_lv_adapter_lock(-1);
     if (container_time_up) {
         lv_obj_add_flag(container_time_up, LV_OBJ_FLAG_HIDDEN);

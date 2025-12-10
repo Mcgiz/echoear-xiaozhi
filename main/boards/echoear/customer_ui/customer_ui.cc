@@ -6,8 +6,8 @@
 
 #define TAG "CustomerUI"
 
-void create_customer_ui()
+void create_customer_ui(Display *display)
 {
-    create_main_ui();
+    create_main_ui(display);
     ESP_LOGI(TAG, "Customer UI created for %dx%d", DISPLAY_WIDTH, DISPLAY_HEIGHT);
 }

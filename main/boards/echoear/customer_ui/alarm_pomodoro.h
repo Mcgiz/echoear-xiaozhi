@@ -40,26 +40,10 @@ void alarm_pomodoro_toggle_start_pause(void);
  */
 void alarm_pomodoro_reset_to_zero(void);
 
-/**
- * @brief Check if timer is currently paused
- * @return true if timer is paused, false if running or not initialized
- */
+/* Internal functions - declared here for internal use only */
+/* External modules should use customer_ui_api.h instead */
 bool alarm_pomodoro_is_paused(void);
-
-/**
- * @brief Start or resume the pomodoro timer
- *
- * If not on pomodoro page, switches to it first.
- * If timer is paused, resumes it. If already running, does nothing.
- */
 void alarm_pomodoro_start(void);
-
-/**
- * @brief Pause the pomodoro timer
- *
- * If not on pomodoro page, switches to it first.
- * If timer is running, pauses it. If already paused, does nothing.
- */
 void alarm_pomodoro_pause(void);
 
 #ifdef __cplusplus

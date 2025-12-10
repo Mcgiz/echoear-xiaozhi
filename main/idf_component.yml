@@ -48,7 +48,7 @@ dependencies:
   espressif2022/esp_emote_assets: ^0.0.3
   espressif2022/echo_base_control: ^0.0.1
   espfriends/beat_detection: ^1.0.0
-  espressif2022/audio_doa: ^0.0.1
+  espfriends/audio_doa: ^1.0.0
   espressif/esp_lv_eaf_player:
     version: ^0.1.0
     override_path: ../components/esp_lv_eaf_player

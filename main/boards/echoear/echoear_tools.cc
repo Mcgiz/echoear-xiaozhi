@@ -5,8 +5,7 @@
 #include "mcp_server.h"
 #include "board.h"
 #include "assets/lang_config.h"
-#include "customer_ui/main_ui.h"
-#include "customer_ui/alarm_pomodoro.h"
+#include "customer_ui/customer_ui_api.h"
 #include <esp_log.h>
 
 #define TAG "EchoEarTools"

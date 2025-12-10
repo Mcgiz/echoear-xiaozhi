@@ -10,6 +10,7 @@
 #define SCREEN_HEIGHT   DISPLAY_HEIGHT
 
 #ifdef __cplusplus
+class Display;
 extern "C" {
 #endif
 
@@ -41,7 +42,7 @@ LV_IMG_DECLARE(watch_bg);
  * - container1: Full screen dummy_obj for detecting LV_EVENT_CLICKED
  * - container2: Tabview with two pages (container_pomodoro and container_sleep)
  */
-void create_main_ui(void);
+void create_main_ui(Display *display);
 
 /**
  * @brief Show pomodoro timer UI (make it visible)
@@ -63,45 +64,13 @@ void alarm_time_up_show(void);
  */
 void alarm_time_up_hide(void);
 
-/**
- * @brief Show pomodoro page with specified minutes (default 5 min if <= 0)
- *
- * This will:
- *  - reset pomodoro timer to 0
- *  - set remaining time to `minutes` (or 5 if minutes <= 0)
- *  - show pomodoro page
- */
+/* Internal functions - declared here for internal use only */
+/* External modules should use customer_ui_api.h instead */
 void main_ui_show_pomodoro_with_minutes(int32_t minutes);
-
-/**
- * @brief Switch back to dummy draw page (home screen overlay)
- */
 void main_ui_show_dummy_page(void);
-
-/**
- * @brief Global swipe handler callback for child widgets
- *
- * Can be attached to any LVGL object (e.g. child controls inside pomodoro/sleep UIs)
- * to enable page left/right swipe even if the touch starts on that control.
- */
 void main_ui_swipe_event_cb(lv_event_t *e);
-
-/**
- * @brief Get assets size
- * @return Size of the clock loop EAF asset in bytes
- */
 size_t main_ui_get_assets_size(void);
-
-/**
- * @brief Get assets data
- * @return Pointer to the clock loop EAF asset data
- */
 const uint8_t* main_ui_get_assets_data(void);
-
-/**
- * @brief Get current page type
- * @return Current page enum value (MAIN_UI_PAGE_DUMMY, MAIN_UI_PAGE_POMODORO, etc.)
- */
 main_ui_page_t main_ui_get_current_page(void);
 
 #ifdef __cplusplus

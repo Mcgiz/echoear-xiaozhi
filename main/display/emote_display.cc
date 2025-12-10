@@ -805,7 +805,6 @@ bool EmoteDisplay::InsertAnimDialog(const char* emoji_name, uint32_t duration_ms
 
 void EmoteDisplay::RefreshAll()
 {
-    ESP_LOGI(TAG, "Refresh all");
     if (!engine_) {
         ESP_LOGI(TAG, "Refresh all: engine_ is nullptr");
         return;
@@ -817,10 +816,8 @@ void EmoteDisplay::RefreshAll()
         return;
     }
 
-    // gfx_emote_lock(handle);
     gfx_emote_refresh_all(handle);
     ESP_LOGI(TAG, "Refresh done");
-    // gfx_emote_unlock(handle);
 }
 
 } // namespace emote

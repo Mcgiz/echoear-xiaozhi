@@ -1,5 +1,5 @@
 #include "audio_analysis.h"
-#include "audio_doa.h"
+#include "audio_doa_app.h"
 #include "application.h"
 #include "board.h"
 #include "audio_codec.h"
@@ -15,10 +15,8 @@
 
 #define TAG "AudioAnalysis"
 
-AudioAnalysis::AudioAnalysis() : beat_detection_handle_(nullptr)
+AudioAnalysis::AudioAnalysis() : beat_detection_handle_(nullptr), doa_app_handle_(nullptr)
 {
-    memset(&doa_app_, 0, sizeof(doa_app_));
-    // UDP socket will be initialized lazily when WiFi is connected
 }
 
 AudioAnalysis::~AudioAnalysis()
@@ -48,10 +46,10 @@ void AudioAnalysis::Initialize()
 
     // Initialize audio DOA
     audio_doa_app_config_t doa_app_cfg = {
-        .doa_tracker_result_callback = DoaTrackerResultCallback,
-        .doa_tracker_result_callback_ctx = NULL,
+        .audio_doa_result_callback = DoaTrackerResultCallback,
+        .audio_doa_result_callback_ctx = NULL,
     };
-    ret = audio_doa_app_create(&doa_app_, &doa_app_cfg);
+    ret = audio_doa_app_create(&doa_app_handle_, &doa_app_cfg);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to create audio DOA app");
     } else {
@@ -82,13 +80,8 @@ void AudioAnalysis::BeatDetectionResultCallback(beat_detection_result_t result, 
 
 void AudioAnalysis::DoaTrackerResultCallback(float angle, void *ctx)
 {
-    audio_doa_app_t *app = (audio_doa_app_t *)ctx;
-    if (app == NULL) {
-        ESP_LOGE(TAG, "audio_doa_tracker_result_callback: app is NULL");
-        return;
-    }
-    // ESP_LOGI(TAG, "Estimated direction: %.2f", angle);
-    // echo_base_control_set_angle(angle);
+    ESP_LOGI(TAG, "Estimated direction: %.2f", angle);
+    echo_base_control_set_angle(angle);
 }
 
 void AudioAnalysis::SetAfeDataProcessCallback()
@@ -123,10 +116,10 @@ void AudioAnalysis::OnVadStateChange(bool speaking)
 {
     if (speaking) {
         ESP_LOGD(TAG, "active");
-        audio_doa_app_set_vad_detect(&doa_app_, true);
+        audio_doa_app_set_vad_detect(doa_app_handle_, true);
     } else {
         ESP_LOGD(TAG, "silence");
-        audio_doa_app_set_vad_detect(&doa_app_, false);
+        audio_doa_app_set_vad_detect(doa_app_handle_, false);
     }
 }
 
@@ -168,8 +161,8 @@ void AudioAnalysis::OnAudioDataProcessed(const int16_t* audio_data, size_t bytes
             break;
         }
         // Feed to audio DOA
-        if (doa_app_.doa_handle != nullptr) {
-            audio_doa_app_data_write(&doa_app_, (uint8_t *)audio_data, bytes_per_channel * channels);
+        if (doa_app_handle_ != nullptr) {
+            audio_doa_app_data_write(doa_app_handle_, (uint8_t *)audio_data, bytes_per_channel * channels);
         }
         break;
     }
