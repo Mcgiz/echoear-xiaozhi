@@ -18,6 +18,8 @@ choice
         bool "Flash Default Assets"
     config FLASH_CUSTOM_ASSETS
         bool "Flash Custom Assets"
+    config FLASH_EXPRESSION_ASSETS
+        bool "Flash Use esp_emote_assets"
 endchoice
 
 config CUSTOM_ASSETS_FILE

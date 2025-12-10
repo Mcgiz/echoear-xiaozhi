@@ -128,13 +128,16 @@ void AfeAudioProcessor::AudioProcessorTask() {
         xEventGroupWaitBits(event_group_, PROCESSOR_RUNNING, pdFALSE, pdTRUE, portMAX_DELAY);
 
         auto res = afe_iface_->fetch_with_delay(afe_data_, portMAX_DELAY);
-        if ((xEventGroupGetBits(event_group_) & PROCESSOR_RUNNING) == 0) {
-            continue;
-        }
+        // if ((xEventGroupGetBits(event_group_) & PROCESSOR_RUNNING) == 0) {
+        //     continue;
+        // }
         if (res == nullptr || res->ret_value == ESP_FAIL) {
             if (res != nullptr) {
                 ESP_LOGI(TAG, "Error code: %d", res->ret_value);
             }
+            continue;
+        }
+        if ((xEventGroupGetBits(event_group_) & PROCESSOR_RUNNING) == 0) {
             continue;
         }
 

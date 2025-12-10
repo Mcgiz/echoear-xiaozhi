@@ -10,11 +10,19 @@ BoxAudioCodec::BoxAudioCodec(void* i2c_master_handle, int input_sample_rate, int
     gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws, gpio_num_t dout, gpio_num_t din,
     gpio_num_t pa_pin, uint8_t es8311_addr, uint8_t es7210_addr, bool input_reference) {
     duplex_ = true; // 是否双工
+#if 0
     input_reference_ = input_reference; // 是否使用参考输入，实现回声消除
     input_channels_ = input_reference_ ? 2 : 1; // 输入通道数
+#else
+    input_reference_ = false; // 是否使用参考输入，实现回声消除
+    input_channels_ = 2; // 输入通道数
+#endif
     input_sample_rate_ = input_sample_rate;
     output_sample_rate_ = output_sample_rate;
     input_gain_ = 30;
+
+    ESP_LOGI(TAG, "input_reference: %d, input_channels: %d", input_reference_, input_channels_);
+    ESP_LOGI(TAG, "input_sample_rate: %d, output_sample_rate: %d", input_sample_rate_, output_sample_rate_);
 
     CreateDuplexChannels(mclk, bclk, ws, dout, din);
 
@@ -184,6 +192,7 @@ void BoxAudioCodec::SetOutputVolume(int volume) {
     AudioCodec::SetOutputVolume(volume);
 }
 
+#if 0
 void BoxAudioCodec::EnableInput(bool enable) {
     std::lock_guard<std::mutex> lock(data_if_mutex_);
     if (enable == input_enabled_) {
@@ -207,6 +216,29 @@ void BoxAudioCodec::EnableInput(bool enable) {
     }
     AudioCodec::EnableInput(enable);
 }
+//delete reference channel
+#else
+void BoxAudioCodec::EnableInput(bool enable) {
+    std::lock_guard<std::mutex> lock(data_if_mutex_);
+    if (enable == input_enabled_) {
+        return;
+    }
+    if (enable) {
+        esp_codec_dev_sample_info_t fs = {
+            .bits_per_sample = 16,
+            .channel = 2,
+            .channel_mask = ESP_CODEC_DEV_MAKE_CHANNEL_MASK(0) | ESP_CODEC_DEV_MAKE_CHANNEL_MASK(1),
+            .sample_rate = (uint32_t)output_sample_rate_,
+            .mclk_multiple = 0,
+        };
+        ESP_ERROR_CHECK(esp_codec_dev_open(input_dev_, &fs));
+        ESP_ERROR_CHECK(esp_codec_dev_set_in_gain(input_dev_, input_gain_));
+    } else {
+        ESP_ERROR_CHECK(esp_codec_dev_close(input_dev_));
+    }
+    AudioCodec::EnableInput(enable);
+}
+#endif
 
 void BoxAudioCodec::EnableOutput(bool enable) {
     std::lock_guard<std::mutex> lock(data_if_mutex_);

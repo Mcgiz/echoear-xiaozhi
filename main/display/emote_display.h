@@ -75,6 +75,10 @@ public:
     AssetData GetEmojiData(const std::string &name) const;
     AssetData GetIconData(const std::string &name) const;
 
+    // Anim dialog methods
+    bool StopAnimDialog();
+    bool InsertAnimDialog(const char* emoji_name, uint32_t duration_ms);
+
     EmoteEngine* GetEngine() const;
     void* GetEngineHandle() const;
 

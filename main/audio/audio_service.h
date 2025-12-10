@@ -57,6 +57,7 @@ struct AudioServiceCallbacks {
     std::function<void(const std::string&)> on_wake_word_detected;
     std::function<void(bool)> on_vad_change;
     std::function<void(void)> on_audio_testing_queue_full;
+    std::function<void(const int16_t* audio_data, size_t bytes_per_channel, size_t channels)> on_audio_data_processed;
 };
 
 
@@ -109,6 +110,9 @@ public:
     bool ReadAudioData(std::vector<int16_t>& data, int sample_rate, int samples);
     void ResetDecoder();
     void SetModelsList(srmodel_list_t* models_list);
+    void SetAfeDataProcessedCallback(std::function<void(const int16_t* audio_data, size_t total_bytes)> callback);
+    void SetVadStateChangeCallback(std::function<void(bool speaking)> callback);
+    void SetAudioDataProcessedCallback(std::function<void(const int16_t* audio_data, size_t bytes_per_channel, size_t channels)> callback);
 
 private:
     AudioCodec* codec_ = nullptr;

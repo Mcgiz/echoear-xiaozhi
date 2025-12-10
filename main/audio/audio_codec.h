@@ -49,7 +49,7 @@ protected:
     bool output_enabled_ = false;
     int input_sample_rate_ = 0;
     int output_sample_rate_ = 0;
-    int input_channels_ = 1;
+    int input_channels_ = 2;
     int output_channels_ = 1;
     int output_volume_ = 70;
     float input_gain_ = 0.0;
