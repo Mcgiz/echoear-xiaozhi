@@ -47,7 +47,7 @@ dependencies:
   espressif2022/esp_emote_gfx: ^2.0.0
   espressif2022/esp_emote_assets: ^0.0.3
   espressif2022/echo_base_control: ^0.0.1
-  zhanghongze/beat_detection: ^1.1.0
+  espfriends/beat_detection: ^1.0.0
   espressif2022/audio_doa: ^0.0.1
   espressif/esp_lv_eaf_player:
     version: ^0.1.0

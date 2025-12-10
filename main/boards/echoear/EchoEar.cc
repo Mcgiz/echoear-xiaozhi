@@ -174,7 +174,7 @@ void start_lvgl(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel
                                                          static_cast<uint16_t>(height),
                                                          ESP_LV_ADAPTER_ROTATE_0);
     display_config.profile.use_psram = true;
-    display_config.profile.buffer_height = 20;
+    // display_config.profile.buffer_height = 20;
     display_config.profile.require_double_buffer = true;
 
     lv_display_t *display_ = esp_lv_adapter_register_display(&display_config);
@@ -188,8 +188,8 @@ void start_lvgl(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel
     }
 
     ESP_LOGI(TAG, "Starting LVGL adapter");
-    esp_lv_adapter_start();
     esp_lv_adapter_set_dummy_draw(display_, true);
+    esp_lv_adapter_start();
 
     esp_lv_adapter_lock(-1);
     create_customer_ui();
@@ -201,7 +201,8 @@ void EspS3Cat::Initializest77916Display()
     esp_lcd_panel_io_handle_t panel_io = nullptr;
     esp_lcd_panel_handle_t panel = nullptr;
 
-    const esp_lcd_panel_io_spi_config_t io_config = ST77916_PANEL_IO_QSPI_CONFIG(QSPI_PIN_NUM_LCD_CS, NULL, NULL);
+    esp_lcd_panel_io_spi_config_t io_config = ST77916_PANEL_IO_QSPI_CONFIG(QSPI_PIN_NUM_LCD_CS, NULL, NULL);
+    io_config.trans_queue_depth = 2;
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)QSPI_LCD_HOST, &io_config, &panel_io));
     st77916_vendor_config_t vendor_config = {
         .init_cmds = vendor_specific_init_yysj,
@@ -229,7 +230,6 @@ void EspS3Cat::Initializest77916Display()
 
 #if CONFIG_USE_EMOTE_MESSAGE_STYLE
     display_ = new emote::EmoteDisplay(panel, panel_io, DISPLAY_WIDTH, DISPLAY_HEIGHT);
-
     start_lvgl(panel_io, panel, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
 #else
     display_ = new SpiLcdDisplay(panel_io, panel,

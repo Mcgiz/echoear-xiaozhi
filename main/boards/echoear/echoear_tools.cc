@@ -5,6 +5,8 @@
 #include "mcp_server.h"
 #include "board.h"
 #include "assets/lang_config.h"
+#include "customer_ui/main_ui.h"
+#include "customer_ui/alarm_pomodoro.h"
 #include <esp_log.h>
 
 #define TAG "EchoEarTools"
@@ -20,7 +22,7 @@ void EchoEarTools::Initialize(EspS3Cat* board)
                        "look_around: 环顾四周动作\n"
                        "beat_swing: 节拍摇摆动作\n"
                        "cat_nuzzle: 蹭头撒娇动作\n"
-                       "calibrate: 校准底座",
+                       "calibrate: 校准底座\n",
     PropertyList({
         Property("action", kPropertyTypeString),
     }), [board](const PropertyList & properties) -> ReturnValue {
@@ -94,6 +96,37 @@ void EchoEarTools::Initialize(EspS3Cat* board)
 
         board->SetAudioAnalysisMode(analysis_mode);
         ESP_LOGI(TAG, "Audio analysis mode set to: %s", mode.c_str());
+        return true;
+    });
+
+    // Pomodoro timer control
+    mcp_server.AddTool("self.pomodoro.start", "开启番茄钟定时器，设置倒计时时间（1-60分钟，默认5分钟）",
+    PropertyList({
+        Property("minutes", kPropertyTypeInteger, 5, 1, 60),
+    }), [](const PropertyList& properties) -> ReturnValue {
+        int minutes = properties["minutes"].value<int>();
+        ESP_LOGI(TAG, "Starting pomodoro timer with %d minutes", minutes);
+        main_ui_show_pomodoro_with_minutes(minutes);
+        return true;
+    });
+
+    // Pomodoro timer control (start/pause)
+    mcp_server.AddTool("self.pomodoro.control", "控制番茄钟定时器的运行状态。参数：start-启动定时器，pause-暂停定时器",
+    PropertyList({
+        Property("action", kPropertyTypeString),
+    }), [](const PropertyList& properties) -> ReturnValue {
+        const std::string &action = properties["action"].value<std::string>();
+        
+        if (action == "start") {
+            ESP_LOGI(TAG, "Starting pomodoro timer");
+            alarm_pomodoro_start();
+        } else if (action == "pause") {
+            ESP_LOGI(TAG, "Pausing pomodoro timer");
+            alarm_pomodoro_pause();
+        } else {
+            ESP_LOGE(TAG, "Unknown pomodoro action: %s (expected 'start' or 'pause')", action.c_str());
+            return false;
+        }
         return true;
     });
 }

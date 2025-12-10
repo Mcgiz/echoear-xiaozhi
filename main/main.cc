@@ -13,7 +13,7 @@
 #define TAG "main"
 
 
-#define MEMORY_MONITOR 1
+#define MEMORY_MONITOR 0
 
 #if MEMORY_MONITOR
 
@@ -179,8 +179,9 @@ extern "C" void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
 
-
+#if MEMORY_MONITOR
     sys_monitor_start();
+#endif
 
     // Launch the application
     auto& app = Application::GetInstance();
