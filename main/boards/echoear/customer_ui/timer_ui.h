@@ -32,15 +32,7 @@ void create_timer_ui(void);
  */
 void create_timer_ui_with_parent(lv_obj_t *parent);
 
-/**
- * @brief Create tabview with timer UI and timer range UI
- *
- * Creates a tabview that contains two tabs:
- * - Tab 1: Timer UI (countdown timer)
- * - Tab 2: Timer Range UI (24h range selector)
- * Users can swipe horizontally to switch between tabs.
- */
-void create_timer_tabview(void);
+// create_timer_tabview has been moved to main_ui.cc
 
 /**
  * @brief Destroy timer UI and free resources

@@ -424,10 +424,10 @@ void EmoteEngine::OnFlush(const gfx_handle_t handle, const int x_start, const in
         if (state) {
             esp_lv_adapter_dummy_draw_blit(
                 disp, x_start, y_start, x_end, y_end, color_data, true);
-            gfx_emote_flush_ready(handle, true);
+            // gfx_emote_flush_ready(handle, true);
         }
     }
-    // gfx_emote_flush_ready(handle, true);
+    gfx_emote_flush_ready(handle, true);
 }
 #else
 void EmoteEngine::OnFlush(const gfx_handle_t handle, const int x_start, const int y_start,

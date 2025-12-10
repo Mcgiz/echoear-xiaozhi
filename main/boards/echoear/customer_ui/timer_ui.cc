@@ -14,6 +14,7 @@
 #include "timer_range_ui.h"
 #include "timer_ui.h"
 #include "alarm_alert_ui.h"
+#include "main_ui.h"
 
 #define SCREEN_WIDTH    360
 #define SCREEN_HEIGHT   360
@@ -71,9 +72,8 @@ typedef enum {
 } timer_mode_t;
 
 static timer_mode_t current_timer_mode = TIMER_MODE_COUNTDOWN;
-static lv_obj_t *timer_container = NULL;
-static lv_obj_t *range_container = NULL;
-static lv_obj_t *long_press_area = NULL;
+// timer_container and range_container are now created in main_ui.cc
+// Access them via main_ui_get_timer_container() and main_ui_get_range_container()
 
 
 static lv_image_dsc_t s_test_eaf_dsc;
@@ -692,6 +692,8 @@ void timer_ui_switch_to_countdown(void)
     
     esp_lv_adapter_lock(-1);
     current_timer_mode = TIMER_MODE_COUNTDOWN;
+    lv_obj_t *range_container = main_ui_get_range_container();
+    lv_obj_t *timer_container = main_ui_get_timer_container();
     if (range_container) {
         lv_obj_add_flag(range_container, LV_OBJ_FLAG_HIDDEN);
     }
@@ -715,6 +717,8 @@ void timer_ui_switch_to_range(void)
     
     esp_lv_adapter_lock(-1);
     current_timer_mode = TIMER_MODE_RANGE;
+    lv_obj_t *timer_container = main_ui_get_timer_container();
+    lv_obj_t *range_container = main_ui_get_range_container();
     if (timer_container) {
         lv_obj_add_flag(timer_container, LV_OBJ_FLAG_HIDDEN);
     }
@@ -732,6 +736,7 @@ void timer_ui_show(void)
     if (timer_ui.container) {
         lv_obj_clear_flag(timer_ui.container, LV_OBJ_FLAG_HIDDEN);
     }
+    lv_obj_t *timer_container = main_ui_get_timer_container();
     if (timer_container) {
         lv_obj_clear_flag(timer_container, LV_OBJ_FLAG_HIDDEN);
     }
@@ -746,92 +751,10 @@ void timer_ui_hide(void)
     if (timer_ui.container) {
         lv_obj_add_flag(timer_ui.container, LV_OBJ_FLAG_HIDDEN);
     }
+    lv_obj_t *timer_container = main_ui_get_timer_container();
     if (timer_container) {
         lv_obj_add_flag(timer_container, LV_OBJ_FLAG_HIDDEN);
     }
     esp_lv_adapter_unlock();
     ESP_LOGI(TAG, "Timer UI hidden");
-}
-
-// Long press event handler to switch between timer modes
-static void long_press_event_handler(lv_event_t *e)
-{
-    lv_event_code_t code = lv_event_get_code(e);
-    
-    // Only handle long press event, let other events pass through to child objects
-    if (code == LV_EVENT_LONG_PRESSED) {
-        // Toggle between countdown and range mode
-        if (current_timer_mode == TIMER_MODE_COUNTDOWN) {
-            // Switch to range mode
-            current_timer_mode = TIMER_MODE_RANGE;
-            if (timer_container) {
-                lv_obj_add_flag(timer_container, LV_OBJ_FLAG_HIDDEN);
-            }
-            if (range_container) {
-                lv_obj_clear_flag(range_container, LV_OBJ_FLAG_HIDDEN);
-            }
-            ESP_LOGI(TAG, "Switched to Range mode");
-        } else {
-            // Switch to countdown mode
-            current_timer_mode = TIMER_MODE_COUNTDOWN;
-            if (range_container) {
-                lv_obj_add_flag(range_container, LV_OBJ_FLAG_HIDDEN);
-            }
-            if (timer_container) {
-                lv_obj_clear_flag(timer_container, LV_OBJ_FLAG_HIDDEN);
-            }
-            // Reset timer to 0:00 when entering countdown mode
-            timer_ui_reset_to_zero();
-            ESP_LOGI(TAG, "Switched to Countdown mode, timer reset to 0:00");
-        }
-    }
-}
-
-// Create timer UI with long press to switch between countdown and range
-void create_timer_tabview(void)
-{
-    // Create main container
-    lv_obj_t *main_container = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(main_container, SCREEN_WIDTH, SCREEN_HEIGHT);
-    lv_obj_center(main_container);
-    lv_obj_set_style_bg_color(main_container, lv_color_black(), 0);
-    lv_obj_set_style_border_width(main_container, 0, 0);
-    lv_obj_set_style_pad_all(main_container, 0, 0);
-    
-    // Create timer UI (countdown) - shown by default
-    timer_container = lv_obj_create(main_container);
-    lv_obj_set_size(timer_container, SCREEN_WIDTH, SCREEN_HEIGHT);
-    lv_obj_set_style_bg_color(timer_container, lv_color_black(), 0);
-    lv_obj_set_style_border_width(timer_container, 0, 0);
-    lv_obj_set_style_pad_all(timer_container, 0, 0);
-    create_timer_ui_with_parent(timer_container);
-    
-    // // Create range UI - hidden by default
-    // range_container = lv_obj_create(main_container);
-    // lv_obj_set_size(range_container, SCREEN_WIDTH, SCREEN_HEIGHT);
-    // lv_obj_set_style_bg_color(range_container, lv_color_black(), 0);
-    // lv_obj_set_style_border_width(range_container, 0, 0);
-    // lv_obj_set_style_pad_all(range_container, 0, 0);
-    // lv_obj_add_flag(range_container, LV_OBJ_FLAG_HIDDEN);
-    // create_timer_range_ui_with_parent(range_container);
-    
-    // Create long press area directly on screen (not in main_container) to ensure it's on top
-    // This ensures it's above all other objects and can receive touch events
-    long_press_area = lv_obj_create(main_container);
-    lv_obj_set_size(long_press_area, 200, 200);  // Large enough area in center
-    lv_obj_align(long_press_area, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_style_bg_opa(long_press_area, LV_OPA_TRANSP, 0);  // Transparent
-    lv_obj_set_style_border_width(long_press_area, 0, 0);
-    lv_obj_set_style_pad_all(long_press_area, 0, 0);
-    // Make it clickable to receive long press events
-    lv_obj_add_flag(long_press_area, LV_OBJ_FLAG_CLICKABLE);
-    // Ensure it's on top of everything
-    lv_obj_move_foreground(long_press_area);
-    
-    // Add event handler for all events (but only process long press, forward others)
-    lv_obj_add_event_cb(long_press_area, long_press_event_handler, LV_EVENT_ALL, NULL);
-    
-    current_timer_mode = TIMER_MODE_COUNTDOWN;
-    
-    ESP_LOGI(TAG, "Timer UI created with long press to switch (long press center to switch)");
 }
