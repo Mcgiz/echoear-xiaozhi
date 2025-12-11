@@ -300,8 +300,8 @@ lv_obj_t *alarm_pomodoro_create_with_parent(lv_obj_t *parent)
     s_eaf_dsc.header.h = 1;
     s_eaf_dsc.header.stride = 0;
     s_eaf_dsc.header.reserved_2 = 0;
-    s_eaf_dsc.data_size = main_ui_get_assets_size();
-    s_eaf_dsc.data = main_ui_get_assets_data();
+    s_eaf_dsc.data_size = sizeof(clock_loop_eaf);
+    s_eaf_dsc.data = clock_loop_eaf;
 
     lv_eaf_set_src(s_pomodoro_ui.eaf_anim, &s_eaf_dsc);
     lv_eaf_set_frame_delay(s_pomodoro_ui.eaf_anim, 30);

@@ -928,10 +928,3 @@ if ("${size}" AND "${offset}")
 else()
     message(STATUS "Assets partition not found, using v1 partition table")
 endif()
-
-spiffs_create_partition_assets(
-    storage
-    "../assets"
-    MMAP_FILE_SUPPORT_FORMAT ".eaf"
-    FLASH_IN_PROJECT
-)

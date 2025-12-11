@@ -28,6 +28,7 @@ LV_IMG_DECLARE(time_sleep);
 LV_IMG_DECLARE(time_arc_texture);
 LV_IMG_DECLARE(clock_loop);
 LV_IMG_DECLARE(watch_bg);
+extern const uint8_t clock_loop_eaf[699139];
 
 /**
  * @brief Switch to specified page (unified page switching interface)
@@ -38,10 +39,6 @@ LV_IMG_DECLARE(watch_bg);
  * @param page_name Target page name to switch to (e.g., "DUMMY", "POMODORO", "SLEEP", "PAGE_TIME_UP")
  */
 void main_ui_switch_page(const char *page_name);
-
-size_t main_ui_get_assets_size(void);
-
-const uint8_t* main_ui_get_assets_data(void);
 
 #ifdef __cplusplus
 }

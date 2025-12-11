@@ -24,37 +24,6 @@ static lv_obj_t *container_time_up = NULL;
 // Global Variables
 // ============================================================================
 
-static mmap_assets_handle_t asset_handle;
-
-// ============================================================================
-// Forward Declarations
-// ============================================================================
-
-void main_ui_init_assets(void)
-{
-    const mmap_assets_config_t config = {
-        .partition_label = "storage",
-        .max_files = MMAP_STORAGE_FILES,
-        .checksum = MMAP_STORAGE_CHECKSUM,
-        .flags = {
-            .mmap_enable = true,
-            .app_bin_check = false,
-            .full_check = true,
-            .metadata_check = true,
-        },
-    };
-
-    mmap_assets_new(&config, &asset_handle);
-
-    int stored_files = mmap_assets_get_stored_files(asset_handle);
-    ESP_LOGI(TAG, "stored_files:%d", stored_files);
-
-    for (int i = 0; i < stored_files; i++) {
-        const char *file_name = mmap_assets_get_name(asset_handle, i);
-        ESP_LOGI(TAG, "file_name:%s, size:%d", file_name, mmap_assets_get_size(asset_handle, i));
-    }
-}
-
 void main_ui_switch_page(const char *page_name)
 {
     ESP_LOGD(TAG, "Switching to page: %s", page_name);
@@ -79,8 +48,6 @@ static bool main_ui_page_switch_callback(const char *target_page, void *user_dat
 
 void alarm_create_ui()
 {
-    main_ui_init_assets();
-
     lv_obj_t *scr = lv_scr_act();
     /* Create and register pomodoro container */
     container_pomodoro = alarm_pomodoro_create_with_parent(scr);
@@ -138,14 +105,4 @@ bool alarm_pause_pomodoro(void)
         alarm_pomodoro_pause();
     }
     return true;
-}
-
-size_t main_ui_get_assets_size(void)
-{
-    return mmap_assets_get_size(asset_handle, MMAP_STORAGE_CLOCK_LOOP_EAF);
-}
-
-const uint8_t* main_ui_get_assets_data(void)
-{
-    return (const uint8_t*)mmap_assets_get_mem(asset_handle, MMAP_STORAGE_CLOCK_LOOP_EAF);
 }
