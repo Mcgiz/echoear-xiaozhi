@@ -8,10 +8,15 @@
 #include "config.h"
 #include "backlight.h"
 #include "charge.h"
-#include "cst816s_touch.h"
+#include "touch_cst816s.h"
+#include <esp_lcd_touch.h>
+#include <esp_lv_adapter.h>
+#include <lvgl.h>
 #include "base_control.h"
 #include "audio_analysis.h"
 #include "echoear_tools.h"
+#include "touch_sensor.h"
+#include "ui_bridge.h"
 
 #include <wifi_station.h>
 #include <esp_log.h>
@@ -19,6 +24,7 @@
 #include <driver/i2c.h>
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
+#include <esp_psram.h>
 #include <esp_lcd_st77916.h>
 #include <driver/temperature_sensor.h>
 #include <freertos/FreeRTOS.h>
@@ -98,13 +104,7 @@ static const st77916_lcd_init_cmd_t vendor_specific_init_yysj[] = {
     {0x00, (uint8_t []){}, 0, 120},
 };
 
-// PCB version dependent GPIO pins
-gpio_num_t AUDIO_I2S_GPIO_DIN = AUDIO_I2S_GPIO_DIN_1;
-gpio_num_t AUDIO_CODEC_PA_PIN = AUDIO_CODEC_PA_PIN_1;
-gpio_num_t QSPI_PIN_NUM_LCD_RST = QSPI_PIN_NUM_LCD_RST_1;
-gpio_num_t TOUCH_PAD2 = TOUCH_PAD2_1;
-gpio_num_t UART1_TX = UART1_TX_1;
-gpio_num_t UART1_RX = UART1_RX_1;
+// PCB version dependent GPIO pins are now defined via macros in config.h
 
 void EspS3Cat::InitializeI2c()
 {
@@ -127,40 +127,7 @@ void EspS3Cat::InitializeI2c()
     ESP_ERROR_CHECK(temperature_sensor_enable(temp_sensor));
 }
 
-uint8_t EspS3Cat::DetectPcbVersion()
-{
-    esp_err_t ret = i2c_master_probe(i2c_bus_, 0x18, 100);
-    uint8_t pcb_version = 0;
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "PCB version V1.0");
-        pcb_version = 0;
-    } else {
-        gpio_config_t gpio_conf = {
-            .pin_bit_mask = (1ULL << GPIO_NUM_48),
-            .mode = GPIO_MODE_OUTPUT,
-            .pull_up_en = GPIO_PULLUP_DISABLE,
-            .pull_down_en = GPIO_PULLDOWN_DISABLE,
-            .intr_type = GPIO_INTR_DISABLE
-        };
-        ESP_ERROR_CHECK(gpio_config(&gpio_conf));
-        ESP_ERROR_CHECK(gpio_set_level(GPIO_NUM_48, 1));
-        vTaskDelay(pdMS_TO_TICKS(100));
-        ret = i2c_master_probe(i2c_bus_, 0x18, 100);
-        if (ret == ESP_OK) {
-            ESP_LOGI(TAG, "PCB version V1.2");
-            pcb_version = 1;
-            AUDIO_I2S_GPIO_DIN = AUDIO_I2S_GPIO_DIN_2;
-            AUDIO_CODEC_PA_PIN = AUDIO_CODEC_PA_PIN_2;
-            QSPI_PIN_NUM_LCD_RST = QSPI_PIN_NUM_LCD_RST_2;
-            TOUCH_PAD2 = TOUCH_PAD2_2;
-            UART1_TX = UART1_TX_2;
-            UART1_RX = UART1_RX_2;
-        } else {
-            ESP_LOGE(TAG, "PCB version detection error");
-        }
-    }
-    return pcb_version;
-}
+// PCB version detection removed - now using SELECT_BOARD_VERSION macro in config.h
 
 void EspS3Cat::InitializeSpi()
 {
@@ -169,16 +136,75 @@ void EspS3Cat::InitializeSpi()
                                                                               QSPI_PIN_NUM_LCD_DATA1,
                                                                               QSPI_PIN_NUM_LCD_DATA2,
                                                                               QSPI_PIN_NUM_LCD_DATA3,
-                                                                              QSPI_LCD_H_RES * 80 * sizeof(uint16_t));
+                                                                              DISPLAY_WIDTH * 8 * sizeof(uint16_t));
     ESP_ERROR_CHECK(spi_bus_initialize(QSPI_LCD_HOST, &bus_config, SPI_DMA_CH_AUTO));
 }
 
-void EspS3Cat::Initializest77916Display(uint8_t pcb_version)
+void start_lvgl(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel,
+                int width, int height, int offset_x, int offset_y, bool mirror_x, bool mirror_y, bool swap_xy,
+                Display *display)
+{
+    lv_init();
+
+#if CONFIG_SPIRAM
+// lv image cache, currently only PNG is supported
+    size_t psram_size_mb = esp_psram_get_size() / 1024 / 1024;
+    if (psram_size_mb >= 8) {
+        lv_image_cache_resize(2 * 1024 * 1024, true);
+        ESP_LOGI(TAG, "Use 2MB of PSRAM for image cache");
+    } else if (psram_size_mb >= 2) {
+        lv_image_cache_resize(512 * 1024, true);
+        ESP_LOGI(TAG, "Use 512KB of PSRAM for image cache");
+    }
+#endif
+
+    ESP_LOGI(TAG, "Initializing LVGL adapter, width:%d, height:%d", width, height);
+    esp_lv_adapter_config_t adapter_config = ESP_LV_ADAPTER_DEFAULT_CONFIG();
+    adapter_config.task_priority = 6;
+    adapter_config.task_core_id = 0;
+    adapter_config.tick_period_ms = 5;
+    adapter_config.task_min_delay_ms = 10;
+    adapter_config.task_max_delay_ms = 100;
+    adapter_config.stack_in_psram = false;
+    ESP_ERROR_CHECK(esp_lv_adapter_init(&adapter_config));
+
+    esp_lv_adapter_display_config_t display_config = ESP_LV_ADAPTER_DISPLAY_SPI_WITH_PSRAM_DEFAULT_CONFIG(
+                                                         panel,
+                                                         panel_io,
+                                                         static_cast<uint16_t>(width),
+                                                         static_cast<uint16_t>(height),
+                                                         ESP_LV_ADAPTER_ROTATE_0);
+    display_config.profile.use_psram = true;
+    // display_config.profile.buffer_height = 20;
+    display_config.profile.require_double_buffer = true;
+
+    lv_display_t *display_ = esp_lv_adapter_register_display(&display_config);
+    if (display_ == nullptr) {
+        ESP_LOGE(TAG, "Failed to add display");
+        return;
+    }
+
+    if (offset_x != 0 || offset_y != 0) {
+        lv_display_set_offset(display_, offset_x, offset_y);
+    }
+
+    ESP_LOGI(TAG, "Starting LVGL adapter");
+    esp_lv_adapter_set_dummy_draw(display_, true);
+    esp_lv_adapter_start();
+
+    esp_lv_adapter_lock(-1);
+    /* Pass the display pointer directly to avoid Board::GetInstance() call */
+    ui_bridge_init(display);
+    esp_lv_adapter_unlock();
+}
+
+void EspS3Cat::Initializest77916Display()
 {
     esp_lcd_panel_io_handle_t panel_io = nullptr;
     esp_lcd_panel_handle_t panel = nullptr;
 
-    const esp_lcd_panel_io_spi_config_t io_config = ST77916_PANEL_IO_QSPI_CONFIG(QSPI_PIN_NUM_LCD_CS, NULL, NULL);
+    esp_lcd_panel_io_spi_config_t io_config = ST77916_PANEL_IO_QSPI_CONFIG(QSPI_PIN_NUM_LCD_CS, NULL, NULL);
+    io_config.trans_queue_depth = 2;
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)QSPI_LCD_HOST, &io_config, &panel_io));
     st77916_vendor_config_t vendor_config = {
         .init_cmds = vendor_specific_init_yysj,
@@ -192,7 +218,7 @@ void EspS3Cat::Initializest77916Display(uint8_t pcb_version)
         .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
         .bits_per_pixel = QSPI_LCD_BIT_PER_PIXEL,
         .flags = {
-            .reset_active_high = pcb_version,
+            .reset_active_high = QSPI_LCD_RST_ACTIVE_HIGH,
         },
         .vendor_config = &vendor_config,
     };
@@ -206,6 +232,7 @@ void EspS3Cat::Initializest77916Display(uint8_t pcb_version)
 
 #if CONFIG_USE_EMOTE_MESSAGE_STYLE
     display_ = new emote::EmoteDisplay(panel, panel_io, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+    start_lvgl(panel_io, panel, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY, display_);
 #else
     display_ = new SpiLcdDisplay(panel_io, panel,
                                  DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y, DISPLAY_SWAP_XY);
@@ -232,6 +259,19 @@ void EspS3Cat::InitializeButtons()
     gpio_set_level(POWER_CTRL, 0);
 }
 
+void EspS3Cat::InitializePower()
+{
+#if SELECT_BOARD == PCB_VERSION_V1_2
+    gpio_config_t power_gpio_config;
+    power_gpio_config.mode = GPIO_MODE_OUTPUT;
+    power_gpio_config.pin_bit_mask = BIT64(CORDEC_POWER_CTRL);
+    ESP_ERROR_CHECK(gpio_config(&power_gpio_config));
+    gpio_set_level(CORDEC_POWER_CTRL, 1);  // Enable codec power
+
+    vTaskDelay(pdMS_TO_TICKS(100));
+#endif
+}
+
 void EspS3Cat::InitializeCharge()
 {
     charge_ = new Charge(i2c_bus_, 0x55);
@@ -240,68 +280,60 @@ void EspS3Cat::InitializeCharge()
 
 void EspS3Cat::InitializeCst816sTouchPad()
 {
-    cst816s_ = new Cst816s(i2c_bus_, 0x15);
-
-    xTaskCreatePinnedToCore(touch_event_task, "touch_task", 4 * 1024, cst816s_, 5, NULL, 1);
-
-    const gpio_config_t int_gpio_config = {
-        .pin_bit_mask = (1ULL << TP_PIN_NUM_INT),
-        .mode = GPIO_MODE_INPUT,
-        .intr_type = GPIO_INTR_ANYEDGE
-    };
-    gpio_config(&int_gpio_config);
-    gpio_install_isr_service(0);
-    gpio_intr_enable(TP_PIN_NUM_INT);
-    gpio_isr_handler_add(TP_PIN_NUM_INT, touch_isr_callback, cst816s_);
-}
-
-void EspS3Cat::touch_isr_callback(void* arg)
-{
-    Cst816s* touchpad = static_cast<Cst816s*>(arg);
-    if (touchpad != nullptr) {
-        touchpad->NotifyTouchEvent();
-    }
-}
-
-void EspS3Cat::touch_event_task(void* arg)
-{
-    Cst816s* touchpad = static_cast<Cst816s*>(arg);
-    if (touchpad == nullptr) {
-        ESP_LOGE(TAG, "Invalid touchpad pointer in touch_event_task");
-        vTaskDelete(NULL);
+    cst816s_touch_ = new Cst816sTouch(i2c_bus_);
+    if (!cst816s_touch_->init(DISPLAY_WIDTH,
+                              DISPLAY_HEIGHT,
+                              DISPLAY_SWAP_XY,
+                              DISPLAY_MIRROR_X,
+                              DISPLAY_MIRROR_Y)) {
+        ESP_LOGE(TAG, "Failed to initialize CST816S touch controller");
+        delete cst816s_touch_;
+        cst816s_touch_ = nullptr;
         return;
     }
 
-    while (true) {
-        if (touchpad->WaitForTouchEvent()) {
-            auto &app = Application::GetInstance();
-            auto &board = (EspS3Cat &)Board::GetInstance();
+    // Register touch with LVGL adapter
+    // Note: This should be called after display is initialized
+    lv_display_t *disp = lv_display_get_default();
+    if (disp == nullptr) {
+        ESP_LOGW(TAG, "Display not initialized yet, touch will be registered later");
+        return;
+    }
 
-            ESP_LOGD(TAG, "Touch event, TP_PIN_NUM_INT: %d", gpio_get_level(TP_PIN_NUM_INT));
-            touchpad->UpdateTouchPoint();
-            auto touch_event = touchpad->CheckTouchEvent();
+    esp_lv_adapter_touch_config_t touch_config = ESP_LV_ADAPTER_TOUCH_DEFAULT_CONFIG(disp, cst816s_touch_->get_handle());
+    lv_indev_t *touch = esp_lv_adapter_register_touch(&touch_config);
+    if (touch == nullptr) {
+        ESP_LOGE(TAG, "Touch registration failed");
+        return;
+    }
 
-            if (touch_event == Cst816s::TOUCH_RELEASE) {
-                if (app.GetDeviceState() == kDeviceStateStarting &&
-                        !WifiStation::GetInstance().IsConnected()) {
-                    board.ResetWifiConfiguration();
-                } else {
-                    app.ToggleChatState();
-                }
-            }
-        }
+    ui_bridge_attach_gesture_handler(touch);
+    ESP_LOGI(TAG, "Touch registered successfully");
+}
+
+void EspS3Cat::InitializeTouchSensor()
+{
+    touch_sensor_ = new TouchSensor();
+    if (!touch_sensor_->init()) {
+        ESP_LOGE(TAG, "Failed to initialize touch sensor");
+        delete touch_sensor_;
+        touch_sensor_ = nullptr;
+    } else {
+        ESP_LOGI(TAG, "Touch sensor initialized successfully");
     }
 }
 
 EspS3Cat::EspS3Cat() : boot_button_(BOOT_BUTTON_GPIO)
 {
+    ESP_LOGI(TAG, "EchoEar PCB Version: %d", SELECT_BOARD);
+    InitializePower();
     InitializeI2c();
-    uint8_t pcb_version = DetectPcbVersion();
     InitializeCharge();
-    InitializeCst816sTouchPad();
     InitializeSpi();
-    Initializest77916Display(pcb_version);
+    Initializest77916Display();
     InitializeButtons();
+    InitializeCst816sTouchPad();
+    InitializeTouchSensor();
 
     // Initialize modules
     base_control_ = new BaseControl(this);
@@ -336,9 +368,9 @@ Display* EspS3Cat::GetDisplay()
     return display_;
 }
 
-Cst816s* EspS3Cat::GetTouchpad()
+esp_lcd_touch_handle_t EspS3Cat::GetTouchpad()
 {
-    return cst816s_;
+    return cst816s_touch_ != nullptr ? cst816s_touch_->get_handle() : nullptr;
 }
 
 Backlight* EspS3Cat::GetBacklight()

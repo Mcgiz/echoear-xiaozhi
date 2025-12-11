@@ -14,6 +14,8 @@
 #include <esp_log.h>
 #include <esp_lcd_panel_io.h>
 #include <esp_timer.h>
+#include <esp_lv_adapter.h>
+#include <lvgl.h>
 
 // FreeRTOS headers
 #include <freertos/FreeRTOS.h>
@@ -46,8 +48,8 @@ static const char* TAG = "EmoteDisplay";
 
 // Icon Names - Centralized Management
 #define ICON_MIC                 "icon_mic"
-#define ICON_BATTERY             "icon_Battery"
-#define ICON_SPEAKER_ZZZ         "icon_speaker_zzz"
+#define ICON_BATTERY             "icon_tips"
+#define ICON_SPEAKER_ZZZ         "icon_speaker"
 #define ICON_WIFI_FAILED         "icon_WiFi_failed"
 #define ICON_WIFI_OK             "icon_wifi"
 #define ICON_LISTEN              "listen"
@@ -153,7 +155,6 @@ public:
     void ClearCurrentDialogEmoji() { current_dialog_emoji_.clear(); }
 
     // Callback functions (public to be accessible from static helper functions)
-    static bool OnFlushIoReady(const esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t* const edata, void* const user_ctx);
     static void OnFlush(const gfx_handle_t handle, const int x_start, const int y_start, const int x_end, const int y_end, const void* const color_data);
     static void OnDialogTimer(void* user_ctx);
 
@@ -217,7 +218,8 @@ static void InitializeGraphics(const esp_lcd_panel_handle_t panel, gfx_handle_t*
         .flags = {
             .swap = true,
             .double_buffer = true,
-            .buff_dma = true,
+            .buff_dma = false,
+            .buff_spiram = true,
         },
         .h_res = static_cast<uint32_t>(width),
         .v_res = static_cast<uint32_t>(height),
@@ -286,19 +288,6 @@ static void SetupUI(const gfx_handle_t engine_handle, EmoteDisplay* const displa
     SetUIDisplayMode(UIDisplayMode::SHOW_TIPS, display);
 }
 
-static void RegisterCallbacks(const esp_lcd_panel_io_handle_t panel_io, const gfx_handle_t engine_handle)
-{
-    if (!panel_io) {
-        ESP_LOGE(TAG, "RegisterCallbacks: panel_io is nullptr");
-        return;
-    }
-
-    const esp_lcd_panel_io_callbacks_t cbs = {
-        .on_color_trans_done = EmoteEngine::OnFlushIoReady,
-    };
-    esp_lcd_panel_io_register_event_callbacks(panel_io, &cbs, engine_handle);
-}
-
 // ============================================================================
 // EmoteEngine Class Implementation
 // ============================================================================
@@ -313,8 +302,6 @@ EmoteEngine::EmoteEngine(const esp_lcd_panel_handle_t panel, const esp_lcd_panel
         SetupUI(engine_handle_, display);
         gfx_emote_unlock(engine_handle_);
     }
-
-    RegisterCallbacks(panel_io, engine_handle_);
 }
 
 EmoteEngine::~EmoteEngine()
@@ -427,26 +414,32 @@ void EmoteEngine::OnDialogTimer(void* user_ctx)
     }
 }
 
-bool EmoteEngine::OnFlushIoReady(const esp_lcd_panel_io_handle_t panel_io,
-                                 esp_lcd_panel_io_event_data_t* const edata,
-                                 void* const user_ctx)
-{
-    gfx_handle_t handle = static_cast<gfx_handle_t>(user_ctx);
-    if (handle) {
-        gfx_emote_flush_ready(handle, true);
-    }
-    return false;
-}
-
+#if 1
 void EmoteEngine::OnFlush(const gfx_handle_t handle, const int x_start, const int y_start,
                           const int x_end, const int y_end, const void* const color_data)
+{   
+    lv_display_t *disp = lv_display_get_default();
+    if (disp != nullptr) {
+        bool state = esp_lv_adapter_get_dummy_draw_enabled(disp);
+        if (state) {
+            esp_lv_adapter_dummy_draw_blit(
+                disp, x_start, y_start, x_end, y_end, color_data, true);
+            // gfx_emote_flush_ready(handle, true);
+        }
+    }
+    gfx_emote_flush_ready(handle, true);
+}
+#else
+void EmoteEngine::OnFlush(const gfx_handle_t handle, const int x_start, const int y_start,
+    const int x_end, const int y_end, const void* const color_data)
 {
     auto* const panel = static_cast<esp_lcd_panel_handle_t>(gfx_emote_get_user_data(handle));
     if (panel) {
-        esp_lcd_panel_draw_bitmap(panel, x_start, y_start, x_end, y_end, color_data);
+    esp_lcd_panel_draw_bitmap(panel, x_start, y_start, x_end, y_end, color_data);
     }
+    gfx_emote_flush_ready(handle, true);
 }
-
+#endif
 // ============================================================================
 // EmoteDisplay Class Implementation
 // ============================================================================
@@ -808,6 +801,22 @@ bool EmoteDisplay::InsertAnimDialog(const char* emoji_name, uint32_t duration_ms
     gfx_emote_unlock(engine_handle);
 
     return true;
+}
+
+void EmoteDisplay::RefreshAll()
+{
+    if (!engine_) {
+        ESP_LOGI(TAG, "Refresh all: engine_ is nullptr");
+        return;
+    }
+
+    void* handle = engine_->GetEngineHandle();
+    if (!handle) {
+        ESP_LOGI(TAG, "Refresh all: handle is nullptr");
+        return;
+    }
+
+    gfx_emote_refresh_all(handle);
 }
 
 } // namespace emote

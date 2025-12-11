@@ -39,9 +39,9 @@ public:
     }
 
     // Audio DOA
-    audio_doa_app_t* GetDoaApp()
+    audio_doa_app_handle_t GetDoaApp()
     {
-        return &doa_app_;
+        return doa_app_handle_;
     }
 
 private:
@@ -53,7 +53,7 @@ private:
     static void BeatDetectionResultCallback(beat_detection_result_t result, void *ctx);
 
     // Audio DOA
-    audio_doa_app_t doa_app_;
+    audio_doa_app_handle_t doa_app_handle_;
     static void DoaTrackerResultCallback(float angle, void *ctx);
 
     // Internal handlers

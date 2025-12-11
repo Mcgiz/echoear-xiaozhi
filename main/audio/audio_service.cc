@@ -747,13 +747,27 @@ void AudioService::SetAfeDataProcessedCallback(std::function<void(const int16_t*
 
 void AudioService::SetVadStateChangeCallback(std::function<void(bool speaking)> callback) {
 #if CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32P4
+    // Register callback with AfeAudioProcessor
+    // Create a combined callback that updates voice_detected_ and calls the external callback
+    if (audio_processor_ != nullptr) {
+        AfeAudioProcessor* afe_processor = dynamic_cast<AfeAudioProcessor*>(audio_processor_.get());
+        if (afe_processor != nullptr) {
+            afe_processor->OnVadStateChange([this, callback](bool speaking) {
+                voice_detected_ = speaking;
+                if (callback) {
+                    callback(speaking);
+                }
+            });
+            ESP_LOGI(TAG, "VAD state change callback registered in AfeAudioProcessor");
+        }
+    }
+    
+    // Also register with AfeWakeWord if available
     if (wake_word_ != nullptr) {
         AfeWakeWord* afe_wake_word = dynamic_cast<AfeWakeWord*>(wake_word_.get());
         if (afe_wake_word != nullptr) {
             afe_wake_word->OnVadStateChange(callback);
             ESP_LOGI(TAG, "VAD state change callback registered in AfeWakeWord");
-        } else {
-            ESP_LOGW(TAG, "Wake word is not AfeWakeWord, cannot set VAD state change callback");
         }
     }
 #endif

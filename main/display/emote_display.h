@@ -82,6 +82,13 @@ public:
     EmoteEngine* GetEngine() const;
     void* GetEngineHandle() const;
 
+    /**
+     * @brief Trigger a full-screen refresh of the emote graphics engine
+     *
+     * Internally calls gfx_emote_refresh_all() with the engine handle.
+     */
+    void RefreshAll();
+
     inline std::shared_ptr<LvglFont> text_font() const
     {
         return text_font_;

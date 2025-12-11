@@ -9,7 +9,7 @@
 #include <font_awesome.h>
 #include <esp_log.h>
 #include <esp_err.h>
-#include <esp_lvgl_port.h>
+#include <esp_lv_adapter.h>
 #include <esp_psram.h>
 #include <cstring>
 
@@ -124,42 +124,20 @@ SpiLcdDisplay::SpiLcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_h
     }
 #endif
 
-    ESP_LOGI(TAG, "Initialize LVGL port");
-    lvgl_port_cfg_t port_cfg = ESP_LVGL_PORT_INIT_CONFIG();
-    port_cfg.task_priority = 1;
-#if CONFIG_SOC_CPU_CORES_NUM > 1
-    port_cfg.task_affinity = 1;
-#endif
-    lvgl_port_init(&port_cfg);
+    ESP_LOGI(TAG, "Initializing LVGL adapter, width:%d, height:%d", width_, height_);
+    const esp_lv_adapter_config_t adapter_config = ESP_LV_ADAPTER_DEFAULT_CONFIG();
+    ESP_ERROR_CHECK(esp_lv_adapter_init(&adapter_config));
 
-    ESP_LOGI(TAG, "Adding LCD display");
-    const lvgl_port_display_cfg_t display_cfg = {
-        .io_handle = panel_io_,
-        .panel_handle = panel_,
-        .control_handle = nullptr,
-        .buffer_size = static_cast<uint32_t>(width_ * 20),
-        .double_buffer = false,
-        .trans_size = 0,
-        .hres = static_cast<uint32_t>(width_),
-        .vres = static_cast<uint32_t>(height_),
-        .monochrome = false,
-        .rotation = {
-            .swap_xy = swap_xy,
-            .mirror_x = mirror_x,
-            .mirror_y = mirror_y,
-        },
-        .color_format = LV_COLOR_FORMAT_RGB565,
-        .flags = {
-            .buff_dma = 1,
-            .buff_spiram = 0,
-            .sw_rotate = 0,
-            .swap_bytes = 1,
-            .full_refresh = 0,
-            .direct_mode = 0,
-        },
-    };
+    esp_lv_adapter_display_config_t display_config = ESP_LV_ADAPTER_DISPLAY_SPI_WITH_PSRAM_DEFAULT_CONFIG(
+        panel_,
+        panel_io_,
+        static_cast<uint16_t>(width_),
+        static_cast<uint16_t>(height_),
+        ESP_LV_ADAPTER_ROTATE_0);
+    display_config.profile.use_psram = false;
+    display_config.profile.buffer_height = 20;
 
-    display_ = lvgl_port_add_disp(&display_cfg);
+    display_ = esp_lv_adapter_register_display(&display_config);
     if (display_ == nullptr) {
         ESP_LOGE(TAG, "Failed to add display");
         return;
@@ -168,6 +146,9 @@ SpiLcdDisplay::SpiLcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_h
     if (offset_x != 0 || offset_y != 0) {
         lv_display_set_offset(display_, offset_x, offset_y);
     }
+
+    ESP_LOGI(TAG, "Starting LVGL adapter");
+    esp_lv_adapter_start();
 
     SetupUI();
 }
@@ -189,44 +170,44 @@ RgbLcdDisplay::RgbLcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_h
     lv_init();
 
     ESP_LOGI(TAG, "Initialize LVGL port");
-    lvgl_port_cfg_t port_cfg = ESP_LVGL_PORT_INIT_CONFIG();
-    port_cfg.task_priority = 1;
-    port_cfg.timer_period_ms = 50;
-    lvgl_port_init(&port_cfg);
+    // lvgl_port_cfg_t port_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+    // port_cfg.task_priority = 1;
+    // port_cfg.timer_period_ms = 50;
+    // lvgl_port_init(&port_cfg);
 
-    ESP_LOGI(TAG, "Adding LCD display");
-    const lvgl_port_display_cfg_t display_cfg = {
-        .io_handle = panel_io_,
-        .panel_handle = panel_,
-        .buffer_size = static_cast<uint32_t>(width_ * 20),
-        .double_buffer = true,
-        .hres = static_cast<uint32_t>(width_),
-        .vres = static_cast<uint32_t>(height_),
-        .rotation = {
-            .swap_xy = swap_xy,
-            .mirror_x = mirror_x,
-            .mirror_y = mirror_y,
-        },
-        .flags = {
-            .buff_dma = 1,
-            .swap_bytes = 0,
-            .full_refresh = 1,
-            .direct_mode = 1,
-        },
-    };
+    // ESP_LOGI(TAG, "Adding LCD display");
+    // const lvgl_port_display_cfg_t display_cfg = {
+    //     .io_handle = panel_io_,
+    //     .panel_handle = panel_,
+    //     .buffer_size = static_cast<uint32_t>(width_ * 20),
+    //     .double_buffer = true,
+    //     .hres = static_cast<uint32_t>(width_),
+    //     .vres = static_cast<uint32_t>(height_),
+    //     .rotation = {
+    //         .swap_xy = swap_xy,
+    //         .mirror_x = mirror_x,
+    //         .mirror_y = mirror_y,
+    //     },
+    //     .flags = {
+    //         .buff_dma = 1,
+    //         .swap_bytes = 0,
+    //         .full_refresh = 1,
+    //         .direct_mode = 1,
+    //     },
+    // };
 
-    const lvgl_port_display_rgb_cfg_t rgb_cfg = {
-        .flags = {
-            .bb_mode = true,
-            .avoid_tearing = true,
-        }
-    };
+    // const lvgl_port_display_rgb_cfg_t rgb_cfg = {
+    //     .flags = {
+    //         .bb_mode = true,
+    //         .avoid_tearing = true,
+    //     }
+    // };
     
-    display_ = lvgl_port_add_disp_rgb(&display_cfg, &rgb_cfg);
-    if (display_ == nullptr) {
-        ESP_LOGE(TAG, "Failed to add RGB display");
-        return;
-    }
+    // display_ = lvgl_port_add_disp_rgb(&display_cfg, &rgb_cfg);
+    // if (display_ == nullptr) {
+    //     ESP_LOGE(TAG, "Failed to add RGB display");
+    //     return;
+    // }
     
     if (offset_x != 0 || offset_y != 0) {
         lv_display_set_offset(display_, offset_x, offset_y);
@@ -244,42 +225,42 @@ MipiLcdDisplay::MipiLcdDisplay(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel
     lv_init();
 
     ESP_LOGI(TAG, "Initialize LVGL port");
-    lvgl_port_cfg_t port_cfg = ESP_LVGL_PORT_INIT_CONFIG();
-    lvgl_port_init(&port_cfg);
+    // lvgl_port_cfg_t port_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+    // lvgl_port_init(&port_cfg);
 
-    ESP_LOGI(TAG, "Adding LCD display");
-    const lvgl_port_display_cfg_t disp_cfg = {
-        .io_handle = panel_io,
-        .panel_handle = panel,
-        .control_handle = nullptr,
-        .buffer_size = static_cast<uint32_t>(width_ * 50),
-        .double_buffer = false,
-        .hres = static_cast<uint32_t>(width_),
-        .vres = static_cast<uint32_t>(height_),
-        .monochrome = false,
-        /* Rotation values must be same as used in esp_lcd for initial settings of the screen */
-        .rotation = {
-            .swap_xy = swap_xy,
-            .mirror_x = mirror_x,
-            .mirror_y = mirror_y,
-        },
-        .flags = {
-            .buff_dma = true,
-            .buff_spiram =false,
-            .sw_rotate = true,
-        },
-    };
+    // ESP_LOGI(TAG, "Adding LCD display");
+    // const lvgl_port_display_cfg_t disp_cfg = {
+    //     .io_handle = panel_io,
+    //     .panel_handle = panel,
+    //     .control_handle = nullptr,
+    //     .buffer_size = static_cast<uint32_t>(width_ * 50),
+    //     .double_buffer = false,
+    //     .hres = static_cast<uint32_t>(width_),
+    //     .vres = static_cast<uint32_t>(height_),
+    //     .monochrome = false,
+    //     /* Rotation values must be same as used in esp_lcd for initial settings of the screen */
+    //     .rotation = {
+    //         .swap_xy = swap_xy,
+    //         .mirror_x = mirror_x,
+    //         .mirror_y = mirror_y,
+    //     },
+    //     .flags = {
+    //         .buff_dma = true,
+    //         .buff_spiram =false,
+    //         .sw_rotate = true,
+    //     },
+    // };
 
-    const lvgl_port_display_dsi_cfg_t dpi_cfg = {
-        .flags = {
-            .avoid_tearing = false,
-        }
-    };
-    display_ = lvgl_port_add_disp_dsi(&disp_cfg, &dpi_cfg);
-    if (display_ == nullptr) {
-        ESP_LOGE(TAG, "Failed to add display");
-        return;
-    }
+    // const lvgl_port_display_dsi_cfg_t dpi_cfg = {
+    //     .flags = {
+    //         .avoid_tearing = false,
+    //     }
+    // };
+    // display_ = lvgl_port_add_disp_dsi(&disp_cfg, &dpi_cfg);
+    // if (display_ == nullptr) {
+    //     ESP_LOGE(TAG, "Failed to add display");
+    //     return;
+    // }
 
     if (offset_x != 0 || offset_y != 0) {
         lv_display_set_offset(display_, offset_x, offset_y);
@@ -348,11 +329,11 @@ LcdDisplay::~LcdDisplay() {
 }
 
 bool LcdDisplay::Lock(int timeout_ms) {
-    return lvgl_port_lock(timeout_ms);
+    return (ESP_OK== esp_lv_adapter_lock(pdMS_TO_TICKS(timeout_ms)));
 }
 
 void LcdDisplay::Unlock() {
-    lvgl_port_unlock();
+    esp_lv_adapter_unlock();
 }
 
 #if CONFIG_USE_WECHAT_MESSAGE_STYLE

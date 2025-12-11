@@ -5,20 +5,22 @@
 #include "display/emote_display.h"
 #include "config.h"
 #include "application.h"
+#include "assets/lang_config.h"
 #include "device_state.h"
 #include <esp_log.h>
 #include <esp_timer.h>
 
 #define TAG "BaseControl"
 
-extern gpio_num_t UART1_TX;
-extern gpio_num_t UART1_RX;
-
 BaseControl::BaseControl(EspS3Cat* board) : board_(board)
 {
     echo_base_online_ = false;
     last_heartbeat_time_ = 0;
     heartbeat_check_timer_ = nullptr;
+    calibrate_semaphore_ = xSemaphoreCreateBinary();
+    if (calibrate_semaphore_ == nullptr) {
+        ESP_LOGE(TAG, "Failed to create calibrate semaphore");
+    }
 }
 
 BaseControl::~BaseControl()
@@ -26,6 +28,9 @@ BaseControl::~BaseControl()
     if (heartbeat_check_timer_ != nullptr) {
         esp_timer_stop(heartbeat_check_timer_);
         esp_timer_delete(heartbeat_check_timer_);
+    }
+    if (calibrate_semaphore_ != nullptr) {
+        vSemaphoreDelete(calibrate_semaphore_);
     }
 }
 
@@ -79,6 +84,14 @@ void BaseControl::HandleCommand(uint8_t cmd, uint8_t *data, int data_len)
         return;
     }
 
+    if (cmd != ECHO_BASE_CMD_RECV_HEARTBEAT) {
+        printf("Handle: cmd=%02X, ", cmd);
+        for (int i = 0; i < data_len; i++) {
+            printf("%02X ", data[i]);
+        }
+        printf("\n");
+    }
+
     switch (cmd) {
     case ECHO_BASE_CMD_RECV_SLIDE_SWITCH: {
         if (data_len >= 2) {
@@ -87,14 +100,27 @@ void BaseControl::HandleCommand(uint8_t cmd, uint8_t *data, int data_len)
             uint16_t event = (data[0] << 8) | data[1];
             switch (event) {
             case ECHO_BASE_CMD_RECV_SWITCH_SLIDE_DOWN:
-                // display->SetStatus("status_IDLE");
-                // display->SetEmotion("happy");
-                app.SetDeviceState(kDeviceStateListening);
+                ESP_LOGI(TAG, "Slide switch down");
+                app.ToggleChatState();
                 break;
             case ECHO_BASE_CMD_RECV_SWITCH_SLIDE_UP:
-                // display->SetStatus("status_IDLE");
-                // display->SetEmotion("sleepy");
-                app.SetDeviceState(kDeviceStateIdle);
+                ESP_LOGI(TAG, "Slide switch up");
+                app.ToggleChatState();
+                break;
+            case ECHO_BASE_CMD_RECV_CALIBRATE_START:
+                ESP_LOGI(TAG, "Calibrate start");
+                display->SetChatMessage("system", Lang::Strings::CALIBRATING_STEP1);
+                break;
+            case ECHO_BASE_CMD_RECV_CALIBRATE_STEP1:
+                ESP_LOGI(TAG, "Calibrate step 1 Done");
+                display->SetChatMessage("system", Lang::Strings::CALIBRATING_STEP2);
+                break;
+            case ECHO_BASE_CMD_RECV_CALIBRATE_STEP2:
+                ESP_LOGI(TAG, "Calibrate step 2 Done");
+                display->SetChatMessage("system", Lang::Strings::CALIBRATING_STEP3);
+                if (calibrate_semaphore_ != nullptr) {
+                    xSemaphoreGive(calibrate_semaphore_);
+                }
                 break;
             default:
                 ESP_LOGI(TAG, "Slide switch event: %d", event);
@@ -122,6 +148,7 @@ void BaseControl::HandleCommand(uint8_t cmd, uint8_t *data, int data_len)
     }
     case ECHO_BASE_CMD_RECV_HEARTBEAT: {
         uint16_t event = (data[0] << 8) | data[1];
+        // ESP_LOGI(TAG, "Heartbeat event: %d", event);
         switch (event) {
         case ECHO_BASE_CMD_RECV_HEARTBEAT_ALIVE: {
             int64_t current_time = esp_timer_get_time() / 1000;  // Convert to milliseconds
@@ -135,7 +162,7 @@ void BaseControl::HandleCommand(uint8_t cmd, uint8_t *data, int data_len)
 
                 emote::EmoteDisplay* emote_display = dynamic_cast<emote::EmoteDisplay*>(display);
                 if (emote_display != nullptr) {
-                    emote_display->InsertAnimDialog("insert", 3000);  // 5 seconds animation
+                    emote_display->InsertAnimDialog("insert", 3000);
                 }
             }
             break;
@@ -169,6 +196,29 @@ void BaseControl::HeartbeatCheckTimerCallback(void* arg)
     if (self->echo_base_online_ && time_since_last_heartbeat > BaseControl::HEARTBEAT_TIMEOUT_MS) {
         self->echo_base_online_ = false;
         ESP_LOGW(TAG, "Echo base disconnected (timeout: %lld ms)", time_since_last_heartbeat);
+    }
+}
+
+bool BaseControl::WaitForCalibrationComplete(int timeout_ms)
+{
+    if (calibrate_semaphore_ == nullptr) {
+        ESP_LOGE(TAG, "Calibrate semaphore not initialized");
+        return false;
+    }
+
+    // Clear semaphore first in case it was already set
+    xSemaphoreTake(calibrate_semaphore_, 0);
+
+    // Wait for calibration to complete
+    TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
+    BaseType_t result = xSemaphoreTake(calibrate_semaphore_, timeout_ticks);
+
+    if (result == pdTRUE) {
+        ESP_LOGI(TAG, "Calibration completed successfully");
+        return true;
+    } else {
+        ESP_LOGW(TAG, "Calibration wait timeout after %d ms", timeout_ms);
+        return false;
     }
 }
 
