@@ -48,8 +48,8 @@ static const char* TAG = "EmoteDisplay";
 
 // Icon Names - Centralized Management
 #define ICON_MIC                 "icon_mic"
-#define ICON_BATTERY             "icon_Battery"
-#define ICON_SPEAKER_ZZZ         "icon_speaker_zzz"
+#define ICON_BATTERY             "icon_tips"
+#define ICON_SPEAKER_ZZZ         "icon_speaker"
 #define ICON_WIFI_FAILED         "icon_WiFi_failed"
 #define ICON_WIFI_OK             "icon_wifi"
 #define ICON_LISTEN              "listen"
