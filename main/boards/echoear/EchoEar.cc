@@ -16,7 +16,7 @@
 #include "audio_analysis.h"
 #include "echoear_tools.h"
 #include "touch_sensor.h"
-#include "customer_ui/customer_ui.h"
+#include "ui_bridge.h"
 
 #include <wifi_station.h>
 #include <esp_log.h>
@@ -194,7 +194,7 @@ void start_lvgl(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel
 
     esp_lv_adapter_lock(-1);
     /* Pass the display pointer directly to avoid Board::GetInstance() call */
-    create_customer_ui(display);
+    lvgl_bridge_init(display);
     esp_lv_adapter_unlock();
 }
 
@@ -307,6 +307,7 @@ void EspS3Cat::InitializeCst816sTouchPad()
         return;
     }
 
+    lvgl_bridge_attach_gesture_handler(touch);
     ESP_LOGI(TAG, "Touch registered successfully");
 }
 

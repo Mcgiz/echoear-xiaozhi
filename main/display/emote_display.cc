@@ -817,7 +817,6 @@ void EmoteDisplay::RefreshAll()
     }
 
     gfx_emote_refresh_all(handle);
-    ESP_LOGI(TAG, "Refresh done");
 }
 
 } // namespace emote

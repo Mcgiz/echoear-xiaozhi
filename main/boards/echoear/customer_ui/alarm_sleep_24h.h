@@ -8,6 +8,8 @@
 
 #include "lvgl.h"
 
+#define PAGE_SLEEP      "SLEEP"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -16,8 +18,9 @@ extern "C" {
  * @brief Create 24h sleep timer UI with parent container
  *
  * @param parent  Parent object to create the UI in
+ * @return Created container object
  */
-void alarm_sleep_24h_create_with_parent(lv_obj_t *parent);
+lv_obj_t *alarm_sleep_24h_create_with_parent(lv_obj_t *parent);
 
 /**
  * @brief Trigger center button click event

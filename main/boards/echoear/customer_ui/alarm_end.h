@@ -7,6 +7,8 @@
 #pragma once
 #include "lvgl.h"
 
+#define PAGE_TIME_UP    "TIME_UP"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -15,8 +17,9 @@ extern "C" {
  * @brief Create alarm time up UI with parent container
  *
  * @param parent  Parent object to create the UI in
+ * @return Created container object
  */
-void alarm_time_up_create_with_parent(lv_obj_t *parent);
+lv_obj_t *alarm_time_up_create_with_parent(lv_obj_t *parent);
 
 #ifdef __cplusplus
 }

@@ -5,8 +5,8 @@
 #include "mcp_server.h"
 #include "board.h"
 #include "assets/lang_config.h"
-#include "customer_ui/customer_ui_api.h"
 #include <esp_log.h>
+#include "customer_ui/alarm_api.h"
 
 #define TAG "EchoEarTools"
 
@@ -105,7 +105,7 @@ void EchoEarTools::Initialize(EspS3Cat* board)
     }), [](const PropertyList& properties) -> ReturnValue {
         int minutes = properties["minutes"].value<int>();
         ESP_LOGI(TAG, "Starting pomodoro timer with %d minutes", minutes);
-        main_ui_show_pomodoro_with_minutes(minutes);
+        alarm_start_pomodoro(minutes);
         return true;
     });
 
@@ -116,16 +116,17 @@ void EchoEarTools::Initialize(EspS3Cat* board)
     }), [](const PropertyList& properties) -> ReturnValue {
         const std::string &action = properties["action"].value<std::string>();
         
+        bool success = false;
         if (action == "start") {
             ESP_LOGI(TAG, "Starting pomodoro timer");
-            alarm_pomodoro_start();
+            success = alarm_resume_pomodoro();
         } else if (action == "pause") {
             ESP_LOGI(TAG, "Pausing pomodoro timer");
-            alarm_pomodoro_pause();
+            success = alarm_pause_pomodoro();
         } else {
             ESP_LOGE(TAG, "Unknown pomodoro action: %s (expected 'start' or 'pause')", action.c_str());
             return false;
         }
-        return true;
+        return success;
     });
 }

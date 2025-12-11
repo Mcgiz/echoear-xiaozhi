@@ -8,15 +8,13 @@
 #include "esp_log.h"
 #include <stdio.h>
 #include <math.h>
-#include "esp_lv_adapter.h"
-#include "main_ui.h"
-#include "alarm_sleep_24h.h"
+#include "alarm_manager.h"
 
 #define DAY_SECONDS           (24 * 60 * 60)
 #define DEFAULT_START_HOUR    22
 #define DEFAULT_END_HOUR      8
 
-static const char *TAG = "alarm_sleep_24h";
+static const char *TAG = "sleep_24h";
 
 typedef struct {
     lv_obj_t *container;
@@ -272,18 +270,13 @@ static void end_knob_event_handler(lv_event_t *e)
     }
 }
 
-void alarm_sleep_24h_create_with_parent(lv_obj_t *parent)
+lv_obj_t *alarm_sleep_24h_create_with_parent(lv_obj_t *parent)
 {
     s_sleep_24h_ui.start_angle = (DEFAULT_START_HOUR * 360) / 24;
     s_sleep_24h_ui.end_angle   = (DEFAULT_END_HOUR   * 360) / 24;
 
     s_sleep_24h_ui.container = lv_obj_create(parent);
-    if (parent == lv_scr_act()) {
-        lv_obj_set_size(s_sleep_24h_ui.container, SCREEN_WIDTH, SCREEN_HEIGHT);
-        lv_obj_center(s_sleep_24h_ui.container);
-    } else {
-        lv_obj_set_size(s_sleep_24h_ui.container, LV_PCT(100), LV_PCT(100));
-    }
+    lv_obj_set_size(s_sleep_24h_ui.container, SCREEN_WIDTH, SCREEN_HEIGHT);
     lv_obj_set_style_bg_color(s_sleep_24h_ui.container, lv_color_black(), 0);
     lv_obj_set_style_border_width(s_sleep_24h_ui.container, 0, 0);
     lv_obj_set_style_pad_all(s_sleep_24h_ui.container, 0, 0);
@@ -461,17 +454,13 @@ void alarm_sleep_24h_create_with_parent(lv_obj_t *parent)
     lv_obj_add_flag(s_sleep_24h_ui.end_knob_img, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(s_sleep_24h_ui.end_knob_img, end_knob_event_handler, LV_EVENT_ALL, &s_sleep_24h_ui);
 
-    /* Enable main page swipe handling from sleep 24h UI and its main interactive controls */
-    lv_obj_add_event_cb(s_sleep_24h_ui.container, main_ui_swipe_event_cb, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(s_sleep_24h_ui.start_knob_img, main_ui_swipe_event_cb, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(s_sleep_24h_ui.end_knob_img, main_ui_swipe_event_cb, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(s_sleep_24h_ui.center_btn, main_ui_swipe_event_cb, LV_EVENT_ALL, NULL);
-
     lv_obj_update_layout(s_sleep_24h_ui.container);
     update_range_from_angles(&s_sleep_24h_ui);
 
     ESP_LOGI(TAG, "Sleep 24h UI created: start=%ld°, end=%ld°",
              (long)s_sleep_24h_ui.start_angle, (long)s_sleep_24h_ui.end_angle);
+
+    return s_sleep_24h_ui.container;
 }
 
 void alarm_sleep_24h_trigger_center_btn(void)

@@ -22,7 +22,7 @@ extern "C" { // temporary solution for eliminate compilation errors
 #include "touch_slider_sensor.h"
 }
 
-const static char *TAG = "Touch Sensor";
+const static char *TAG = "Touch";
 
 static const uint32_t touch_channel_list[] = { // define touch channels
 #ifdef TOUCH_PAD1
@@ -57,7 +57,7 @@ static void touch_btn_event_cb(void *button_handle, void *usr_data)
             return;
         }
         std::string wake_word = "我在摸你猫头";
-        Application::GetInstance().WakeWordInvoke(wake_word);
+        // Application::GetInstance().WakeWordInvoke(wake_word);
         break;
     }
     default:
@@ -142,7 +142,7 @@ static void touch_slider_callback(touch_slider_handle_t handle, touch_slider_eve
         break;
 
     case TOUCH_SLIDER_EVENT_RELEASE:
-        ESP_LOGI(TAG, "Released, swipe detected: %s",
+        ESP_LOGI(TAG, "swipe detected: %s",
                  is_sliding_detected ? "YES" : "NO");
 
         // Reset gesture state

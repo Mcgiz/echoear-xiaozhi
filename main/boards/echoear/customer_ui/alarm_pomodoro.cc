@@ -9,15 +9,14 @@
 #include "esp_log.h"
 #include <stdio.h>
 #include <math.h>
-#include "esp_lv_adapter.h"
-#include "main_ui.h"
-#include "alarm_pomodoro.h"
+#include <string.h>  /* For strcmp */
+#include "alarm_manager.h"
 
 #define TIMER_MAX_SECONDS       (60 * 60)
 #define TIMER_INITIAL_SECONDS   (0 * 60)
 #define TIMER_UPDATE_PERIOD_MS  1000
 
-static const char *TAG = "alarm_pomodoro";
+static const char *TAG = "pomodoro";
 
 typedef enum {
     TIMER_STATE_RUNNING = 0,
@@ -265,8 +264,7 @@ static void timer_tick_cb(lv_timer_t *timer)
         if (ui->was_running_before_zero) {
             // Timer was running and naturally counted down to zero
             ESP_LOGI(TAG, "Timer countdown finished naturally - jump to alarm alert UI");
-            alarm_pomodoro_hide();
-            alarm_time_up_show();
+            main_ui_switch_page(PAGE_TIME_UP);
             // Reset flag after jumping
             ui->was_running_before_zero = false;
         } else {
@@ -276,7 +274,7 @@ static void timer_tick_cb(lv_timer_t *timer)
     }
 }
 
-void alarm_pomodoro_create_with_parent(lv_obj_t *parent)
+lv_obj_t *alarm_pomodoro_create_with_parent(lv_obj_t *parent)
 {
     ESP_LOGI(TAG, "Creating pomodoro timer UI");
     s_pomodoro_ui.remaining_seconds = TIMER_INITIAL_SECONDS;
@@ -285,12 +283,7 @@ void alarm_pomodoro_create_with_parent(lv_obj_t *parent)
     s_pomodoro_ui.was_running_before_zero = false;
 
     s_pomodoro_ui.container = lv_obj_create(parent);
-    if (parent == lv_scr_act()) {
-        lv_obj_set_size(s_pomodoro_ui.container, SCREEN_WIDTH, SCREEN_HEIGHT);
-        lv_obj_center(s_pomodoro_ui.container);
-    } else {
-        lv_obj_set_size(s_pomodoro_ui.container, LV_PCT(100), LV_PCT(100));
-    }
+    lv_obj_set_size(s_pomodoro_ui.container, SCREEN_WIDTH, SCREEN_HEIGHT);
     lv_obj_set_style_bg_color(s_pomodoro_ui.container, lv_color_black(), 0);
     lv_obj_set_style_border_width(s_pomodoro_ui.container, 0, 0);
     lv_obj_set_style_pad_all(s_pomodoro_ui.container, 0, 0);
@@ -425,11 +418,6 @@ void alarm_pomodoro_create_with_parent(lv_obj_t *parent)
     int32_t init_angle = (360 * s_pomodoro_ui.remaining_seconds) / TIMER_MAX_SECONDS;
     update_time_from_angle(&s_pomodoro_ui, init_angle);
 
-    /* Enable main page swipe handling from pomodoro UI and its main interactive controls */
-    lv_obj_add_event_cb(s_pomodoro_ui.container, main_ui_swipe_event_cb, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(s_pomodoro_ui.start_knob_img, main_ui_swipe_event_cb, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(s_pomodoro_ui.end_knob_img, main_ui_swipe_event_cb, LV_EVENT_ALL, NULL);
-
     // Create transparent toggle button for start/pause (centered, covering time display area)
     s_pomodoro_ui.toggle_btn = lv_btn_create(s_pomodoro_ui.container);
     lv_obj_set_size(s_pomodoro_ui.toggle_btn, 200, 100);
@@ -439,12 +427,12 @@ void alarm_pomodoro_create_with_parent(lv_obj_t *parent)
     lv_obj_set_style_shadow_opa(s_pomodoro_ui.toggle_btn, LV_OPA_TRANSP, 0);
     lv_obj_set_style_outline_opa(s_pomodoro_ui.toggle_btn, LV_OPA_TRANSP, 0);
     lv_obj_clear_flag(s_pomodoro_ui.toggle_btn, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(s_pomodoro_ui.toggle_btn, toggle_btn_event_handler, LV_EVENT_LONG_PRESSED, NULL);
-    /* Also enable swipe on toggle button */
-    lv_obj_add_event_cb(s_pomodoro_ui.toggle_btn, main_ui_swipe_event_cb, LV_EVENT_ALL, NULL);
+    lv_obj_add_event_cb(s_pomodoro_ui.toggle_btn, toggle_btn_event_handler, LV_EVENT_CLICKED, NULL);
 
     // Create timer to update countdown
     s_pomodoro_ui.timer = lv_timer_create(timer_tick_cb, TIMER_UPDATE_PERIOD_MS, &s_pomodoro_ui);
+
+    return s_pomodoro_ui.container;
 }
 
 void alarm_pomodoro_adjust_end_point(int32_t delta_minutes)
@@ -489,10 +477,10 @@ void alarm_pomodoro_toggle_start_pause(void)
     }
 
     /* Check if current page is pomodoro page, if not, switch to it first */
-    main_ui_page_t current_page = main_ui_get_current_page();
-    if (current_page != MAIN_UI_PAGE_POMODORO) {
-        ESP_LOGI(TAG, "Not on pomodoro page (current=%d), switching to pomodoro page", (int)current_page);
-        alarm_pomodoro_show();
+    const char *current_page = lvgl_bridge_get_current_page();
+    if (current_page == NULL || strcmp(current_page, PAGE_POMODORO) != 0) {
+        ESP_LOGI(TAG, "Not on pomodoro page (current=%s), switching to pomodoro page", current_page ? current_page : "NULL");
+        main_ui_switch_page(PAGE_POMODORO);
     }
 
     esp_lv_adapter_lock(-1);
@@ -551,12 +539,6 @@ void alarm_pomodoro_start(void)
         return;
     }
 
-    /* Check if current page is pomodoro page, if not, switch to it first */
-    main_ui_page_t current_page = main_ui_get_current_page();
-    if (current_page != MAIN_UI_PAGE_POMODORO) {
-        ESP_LOGI(TAG, "Not on pomodoro page (current=%d), switching to pomodoro page", (int)current_page);
-        alarm_pomodoro_show();
-    }
 
     esp_lv_adapter_lock(-1);
     bool is_paused = lv_timer_get_paused(s_pomodoro_ui.timer);
@@ -580,13 +562,6 @@ void alarm_pomodoro_pause(void)
     if (!s_pomodoro_ui.timer) {
         ESP_LOGW(TAG, "Timer not initialized");
         return;
-    }
-
-    /* Check if current page is pomodoro page, if not, switch to it first */
-    main_ui_page_t current_page = main_ui_get_current_page();
-    if (current_page != MAIN_UI_PAGE_POMODORO) {
-        ESP_LOGI(TAG, "Not on pomodoro page (current=%d), switching to pomodoro page", (int)current_page);
-        alarm_pomodoro_show();
     }
 
     esp_lv_adapter_lock(-1);

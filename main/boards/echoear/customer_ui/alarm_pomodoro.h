@@ -10,6 +10,8 @@
 #include <stdbool.h>
 #include "lvgl.h"
 
+#define PAGE_POMODORO   "POMODORO"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -18,8 +20,9 @@ extern "C" {
  * @brief Create pomodoro timer UI with parent container
  *
  * @param parent  Parent object to create the UI in
+ * @return Created container object
  */
-void alarm_pomodoro_create_with_parent(lv_obj_t *parent);
+lv_obj_t *alarm_pomodoro_create_with_parent(lv_obj_t *parent);
 
 /**
  * @brief Adjust end point by delta minutes

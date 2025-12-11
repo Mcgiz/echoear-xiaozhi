@@ -7,12 +7,10 @@
 #include "lvgl.h"
 #include "esp_log.h"
 #include <stdio.h>
-#include "esp_lv_adapter.h"
-#include "main_ui.h"
-#include "alarm_end.h"
-#include "alarm_pomodoro.h"
+#include "alarm_manager.h"
+#include "alarm_api.h"
 
-static const char *TAG = "alarm_time_up";
+static const char *TAG = "time_up";
 
 typedef struct {
     lv_obj_t *container;
@@ -29,9 +27,7 @@ static void remind_later_btn_event_handler(lv_event_t *e)
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_CLICKED) {
         ESP_LOGI(TAG, "Snooze 5 min button clicked");
-        alarm_time_up_hide();
-        alarm_pomodoro_adjust_end_point(5);
-        alarm_pomodoro_show();
+        alarm_start_pomodoro(5);
     }
 }
 
@@ -45,18 +41,17 @@ static void slider_event_handler(lv_event_t *e)
         if (value >= 100) {
             ESP_LOGI(TAG, "Slider reached end - stop alarm");
             lv_slider_set_value(slider, 0, LV_ANIM_ON);
-            main_ui_show_dummy_page();
+            main_ui_switch_page(UI_BRIDGE_PAGE_HOME);
         }
     }
 }
 
-void alarm_time_up_create_with_parent(lv_obj_t *parent)
+lv_obj_t *alarm_time_up_create_with_parent(lv_obj_t *parent)
 {
     ESP_LOGI(TAG, "Creating alarm time up UI");
 
     s_time_up_ui.container = lv_obj_create(parent);
     lv_obj_set_size(s_time_up_ui.container, SCREEN_WIDTH, SCREEN_HEIGHT);
-    lv_obj_center(s_time_up_ui.container);
     lv_obj_set_style_bg_color(s_time_up_ui.container, lv_color_black(), 0);
     lv_obj_set_style_border_width(s_time_up_ui.container, 0, 0);
     lv_obj_set_style_pad_all(s_time_up_ui.container, 0, 0);
@@ -119,4 +114,6 @@ void alarm_time_up_create_with_parent(lv_obj_t *parent)
     lv_obj_add_event_cb(s_time_up_ui.slider, slider_event_handler, LV_EVENT_VALUE_CHANGED, NULL);
 
     lv_obj_move_foreground(s_time_up_ui.slider_label);
+
+    return s_time_up_ui.container;
 }
