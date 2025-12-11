@@ -194,7 +194,7 @@ void start_lvgl(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_handle_t panel
 
     esp_lv_adapter_lock(-1);
     /* Pass the display pointer directly to avoid Board::GetInstance() call */
-    lvgl_bridge_init(display);
+    ui_bridge_init(display);
     esp_lv_adapter_unlock();
 }
 
@@ -307,7 +307,7 @@ void EspS3Cat::InitializeCst816sTouchPad()
         return;
     }
 
-    lvgl_bridge_attach_gesture_handler(touch);
+    ui_bridge_attach_gesture_handler(touch);
     ESP_LOGI(TAG, "Touch registered successfully");
 }
 

@@ -3,12 +3,10 @@
 #include "board.h"
 #include "display/emote_display.h"
 #include "customer_ui/alarm_api.h"
+#include "application.h"
 #include <esp_log.h>
 #include <lvgl.h>
 #include <esp_lv_adapter.h>
-// #include <stdlib.h>  /* For malloc/free */
-// #include <stdbool.h>  /* For bool type */
-// #include <string.h>   /* For strcmp */
 
 #define TAG "ui_bridge"
 
@@ -19,10 +17,10 @@ typedef struct {
     lv_coord_t start_x;
     lv_coord_t start_y;
     uint32_t press_start_time;
-} lvgl_bridge_gesture_state_t;
+} ui_bridge_gesture_state_t;
 
 /* Gesture detection state */
-static lvgl_bridge_gesture_state_t s_gesture_state = {
+static ui_bridge_gesture_state_t s_gesture_state = {
     .active = false,
     .handled = false,
     .start_x = 0,
@@ -31,15 +29,16 @@ static lvgl_bridge_gesture_state_t s_gesture_state = {
 };
 
 /* Page management using linked list */
-typedef struct lvgl_bridge_page_node {
+typedef struct ui_bridge_page_node {
     const char *page_id;
     lv_obj_t **container;
-    struct lvgl_bridge_page_node *next;
-} lvgl_bridge_page_node_t;
+    bool in_cycle;  /* Whether this page should be included in cycle navigation */
+    struct ui_bridge_page_node *next;
+} ui_bridge_page_node_t;
 
-static lvgl_bridge_page_node_t *s_page_list = NULL;  /* Linked list head */
+static ui_bridge_page_node_t *s_page_list = NULL;  /* Linked list head */
 static const char *s_current_page = NULL;
-static lvgl_bridge_page_switch_cb_t s_page_switch_cb = NULL;
+static ui_bridge_page_switch_cb_t s_page_switch_cb = NULL;
 static void *s_page_switch_user_data = NULL;
 
 /* Base emote UI container */
@@ -49,15 +48,15 @@ static lv_obj_t *s_base_container = NULL;
 static emote::EmoteDisplay *s_cached_emote_display = nullptr;
 
 /* Forward declarations */
-static void lvgl_bridge_handle_gesture_navigation(lvgl_bridge_gesture_type_t gesture_type);
-static void lvgl_bridge_refresh_emote_display(void);
+static void ui_bridge_handle_gesture_navigation(ui_bridge_gesture_type_t gesture_type);
+static void ui_bridge_refresh_emote_display(void);
 
 /* Touch gesture event callback */
-static void lvgl_bridge_gesture_event_cb(lv_event_t *e)
+static void ui_bridge_gesture_event_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
     lv_indev_t *indev = lv_indev_get_act();
-    lvgl_bridge_gesture_state_t *state = &s_gesture_state;
+    ui_bridge_gesture_state_t *state = &s_gesture_state;
 
     /* Suppress warning for unhandled enum values - we only care about touch events */
     #pragma GCC diagnostic push
@@ -100,7 +99,7 @@ static void lvgl_bridge_gesture_event_cb(lv_event_t *e)
         /* Detect swipe gestures during pressing */
         if (LV_ABS(dx) >= UI_BRIDGE_GESTURE_SWIPE_THRESHOLD || 
             LV_ABS(dy) >= UI_BRIDGE_GESTURE_SWIPE_THRESHOLD) {
-            lvgl_bridge_gesture_type_t gesture = UI_BRIDGE_GESTURE_NONE;
+            ui_bridge_gesture_type_t gesture = UI_BRIDGE_GESTURE_NONE;
             
             /* Determine swipe direction based on dominant axis */
             if (LV_ABS(dx) > LV_ABS(dy)) {
@@ -122,7 +121,7 @@ static void lvgl_bridge_gesture_event_cb(lv_event_t *e)
             if (gesture != UI_BRIDGE_GESTURE_NONE) {
                 ESP_LOGD(TAG, "swipe detected: %d", gesture);
                 /* Handle page navigation directly */
-                lvgl_bridge_handle_gesture_navigation(gesture);
+                ui_bridge_handle_gesture_navigation(gesture);
                 state->handled = true;
             }
         }
@@ -150,7 +149,7 @@ static void lvgl_bridge_gesture_event_cb(lv_event_t *e)
         if (!state->handled) {
             if (LV_ABS(dx) >= UI_BRIDGE_GESTURE_SWIPE_THRESHOLD || 
                 LV_ABS(dy) >= UI_BRIDGE_GESTURE_SWIPE_THRESHOLD) {
-                lvgl_bridge_gesture_type_t gesture = UI_BRIDGE_GESTURE_NONE;
+                ui_bridge_gesture_type_t gesture = UI_BRIDGE_GESTURE_NONE;
                 
                 /* Determine swipe direction based on dominant axis */
                 if (LV_ABS(dx) > LV_ABS(dy)) {
@@ -172,12 +171,12 @@ static void lvgl_bridge_gesture_event_cb(lv_event_t *e)
                 if (gesture != UI_BRIDGE_GESTURE_NONE) {
                     ESP_LOGD(TAG, "swipe detected: %d", gesture);
                     /* Handle page navigation directly */
-                    lvgl_bridge_handle_gesture_navigation(gesture);
+                    ui_bridge_handle_gesture_navigation(gesture);
                     state->handled = true;
                 }
             } else {
                 /* It's a press (not a swipe) */
-                lvgl_bridge_gesture_type_t gesture;
+                ui_bridge_gesture_type_t gesture;
                 if (press_duration >= UI_BRIDGE_GESTURE_LONG_PRESS_TIME_MS) {
                     gesture = UI_BRIDGE_GESTURE_LONG_PRESS;
                 } else {
@@ -200,7 +199,7 @@ static void lvgl_bridge_gesture_event_cb(lv_event_t *e)
 }
 
 /* Internal function to refresh emote display */
-static void lvgl_bridge_refresh_emote_display(void)
+static void ui_bridge_refresh_emote_display(void)
 {
     if (s_cached_emote_display == nullptr) {
         Display *base_display = Board::GetInstance().GetDisplay();
@@ -221,7 +220,7 @@ static void lvgl_bridge_refresh_emote_display(void)
 }
 
 /* Internal function to handle gesture-based page navigation */
-static void lvgl_bridge_handle_gesture_navigation(lvgl_bridge_gesture_type_t gesture_type)
+static void ui_bridge_handle_gesture_navigation(ui_bridge_gesture_type_t gesture_type)
 {
     /* Map gesture to page direction */
     int direction = 0;
@@ -248,19 +247,21 @@ static void lvgl_bridge_handle_gesture_navigation(lvgl_bridge_gesture_type_t ges
         return;
     }
 
-    /* Count total pages and find current page index */
+    /* Count total pages (only those in cycle) and find current page index */
     unsigned int total_count = 0;
     int current_index = -1;
-    lvgl_bridge_page_node_t *node = s_page_list;
+    ui_bridge_page_node_t *node = s_page_list;
     while (node != NULL) {
-        if (node->page_id == s_current_page) {
-            current_index = (int)total_count;
+        if (node->in_cycle) {
+            if (node->page_id == s_current_page) {
+                current_index = (int)total_count;
+            }
+            total_count++;
         }
-        total_count++;
         node = node->next;
     }
 
-    /* If current page is not in registered list, ignore gesture */
+    /* If current page is not in registered list or no cycle pages, ignore gesture */
     if (current_index < 0 || total_count == 0) {
         return;
     }
@@ -268,21 +269,23 @@ static void lvgl_bridge_handle_gesture_navigation(lvgl_bridge_gesture_type_t ges
     /* Calculate next page index with round-robin */
     int next_index = (current_index + direction + (int)total_count) % (int)total_count;
     
-    /* Find target page by index */
+    /* Find target page by index (only counting cycle pages) */
     const char *target_page = NULL;
     const char *current_name = "UNKNOWN";
     const char *next_name = "UNKNOWN";
     node = s_page_list;
     int index = 0;
     while (node != NULL) {
-        if (index == current_index) {
-            current_name = node->page_id ? node->page_id : "UNKNOWN";
+        if (node->in_cycle) {
+            if (index == current_index) {
+                current_name = node->page_id ? node->page_id : "UNKNOWN";
+            }
+            if (index == next_index) {
+                target_page = node->page_id;
+                next_name = node->page_id ? node->page_id : "UNKNOWN";
+            }
+            index++;
         }
-        if (index == next_index) {
-            target_page = node->page_id;
-            next_name = node->page_id ? node->page_id : "UNKNOWN";
-        }
-        index++;
         node = node->next;
     }
 
@@ -295,11 +298,21 @@ static void lvgl_bridge_handle_gesture_navigation(lvgl_bridge_gesture_type_t ges
     }
 
     /* Default page switching */
-    lvgl_bridge_switch_page(target_page);
+    ui_bridge_switch_page(target_page);
+}
+
+static void ui_bridge_base_container_event_cb(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_CLICKED) {
+        ESP_LOGI(TAG, "Base container clicked");
+        auto &app = Application::GetInstance();
+        app.ToggleChatState();
+    }
 }
 
 /* Public API implementation */
-void lvgl_bridge_init(Display *display)
+void ui_bridge_init(Display *display)
 {
     /* Cache display pointer */
     if (display) {
@@ -320,8 +333,9 @@ void lvgl_bridge_init(Display *display)
     lv_obj_add_flag(s_base_container, LV_OBJ_FLAG_CLICKABLE);
     
     /* Register base container as default page */
-    lvgl_bridge_register_page(UI_BRIDGE_PAGE_HOME, &s_base_container);
-    lvgl_bridge_switch_page(UI_BRIDGE_PAGE_HOME);  /* Set as default page */
+    ui_bridge_register_page(UI_BRIDGE_PAGE_HOME, &s_base_container);
+    ui_bridge_switch_page(UI_BRIDGE_PAGE_HOME);  /* Set as default page */
+    lv_obj_add_event_cb(s_base_container, ui_bridge_base_container_event_cb, LV_EVENT_ALL, NULL);
 
     /* Create main UI (which will register its own pages) */
     alarm_create_ui();
@@ -329,13 +343,18 @@ void lvgl_bridge_init(Display *display)
     ESP_LOGI(TAG, "LVGL display bridge initialized for %dx%d", DISPLAY_WIDTH, DISPLAY_HEIGHT);
 }
 
-void lvgl_bridge_attach_gesture_handler(lv_indev_t *indev)
+void ui_bridge_attach_gesture_handler(lv_indev_t *indev)
 {
     ESP_LOGI(TAG, "Attaching gesture handler to input device: %p", (void*)indev);
-    lv_indev_add_event_cb(indev, lvgl_bridge_gesture_event_cb, LV_EVENT_ALL, NULL);
+    lv_indev_add_event_cb(indev, ui_bridge_gesture_event_cb, LV_EVENT_ALL, NULL);
 }
 
-bool lvgl_bridge_register_page(const char *page_id, lv_obj_t **container)
+bool ui_bridge_register_page(const char *page_id, lv_obj_t **container)
+{
+    return ui_bridge_register_page_with_cycle(page_id, container, true);
+}
+
+bool ui_bridge_register_page_with_cycle(const char *page_id, lv_obj_t **container, bool in_cycle)
 {
     if (page_id == NULL) {
         ESP_LOGE(TAG, "Page ID cannot be NULL");
@@ -343,18 +362,19 @@ bool lvgl_bridge_register_page(const char *page_id, lv_obj_t **container)
     }
     
     /* Check if already registered */
-    lvgl_bridge_page_node_t *node = s_page_list;
+    ui_bridge_page_node_t *node = s_page_list;
     while (node != NULL) {
         if (node->page_id != NULL && strcmp(node->page_id, page_id) == 0) {
             ESP_LOGW(TAG, "Page container '%s' already registered, updating", page_id);
             node->container = container;
+            node->in_cycle = in_cycle;
             return true;
         }
         node = node->next;
     }
     
     /* Create new node */
-    lvgl_bridge_page_node_t *new_node = (lvgl_bridge_page_node_t *)malloc(sizeof(lvgl_bridge_page_node_t));
+    ui_bridge_page_node_t *new_node = (ui_bridge_page_node_t *)malloc(sizeof(ui_bridge_page_node_t));
     if (new_node == NULL) {
         ESP_LOGE(TAG, "Failed to allocate memory for page container node");
         return false;
@@ -362,6 +382,7 @@ bool lvgl_bridge_register_page(const char *page_id, lv_obj_t **container)
     
     new_node->page_id = page_id;
     new_node->container = container;
+    new_node->in_cycle = in_cycle;
     new_node->next = s_page_list;  /* Insert at head */
     s_page_list = new_node;
     
@@ -372,11 +393,12 @@ bool lvgl_bridge_register_page(const char *page_id, lv_obj_t **container)
         count++;
         node = node->next;
     }
-    ESP_LOGD(TAG, "Registered page container for page '%s' (total: %u)", page_id, count);
+    ESP_LOGD(TAG, "Registered page: %s (in_cycle: %s, total: %u)", 
+             page_id ? page_id : "UNKNOWN", in_cycle ? "true" : "false", count);
     return true;
 }
 
-void lvgl_bridge_switch_page(const char *page_id)
+void ui_bridge_switch_page(const char *page_id)
 {
     if (page_id == NULL) {
         ESP_LOGW(TAG, "Cannot switch to NULL page");
@@ -396,7 +418,7 @@ void lvgl_bridge_switch_page(const char *page_id)
     }
 
     /* Control visibility of all registered containers */
-    lvgl_bridge_page_node_t *node = s_page_list;
+    ui_bridge_page_node_t *node = s_page_list;
     while (node != NULL) {
         lv_obj_t *container = *node->container;
         if (container != NULL) {
@@ -413,16 +435,16 @@ void lvgl_bridge_switch_page(const char *page_id)
 
     /* Refresh emote display if switching to home page */
     if (enable_dummy) {
-        lvgl_bridge_refresh_emote_display();
+        ui_bridge_refresh_emote_display();
     }
 }
 
-const char *lvgl_bridge_get_current_page(void)
+const char *ui_bridge_get_current_page(void)
 {
     return s_current_page;
 }
 
-void lvgl_bridge_set_page_switch_callback(lvgl_bridge_page_switch_cb_t cb, void *user_data)
+void ui_bridge_set_page_switch_callback(ui_bridge_page_switch_cb_t cb, void *user_data)
 {
     s_page_switch_cb = cb;
     s_page_switch_user_data = user_data;

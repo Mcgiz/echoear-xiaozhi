@@ -432,6 +432,8 @@ lv_obj_t *alarm_pomodoro_create_with_parent(lv_obj_t *parent)
     // Create timer to update countdown
     s_pomodoro_ui.timer = lv_timer_create(timer_tick_cb, TIMER_UPDATE_PERIOD_MS, &s_pomodoro_ui);
 
+    lv_obj_add_flag(s_pomodoro_ui.container, LV_OBJ_FLAG_HIDDEN);
+
     return s_pomodoro_ui.container;
 }
 
@@ -477,7 +479,7 @@ void alarm_pomodoro_toggle_start_pause(void)
     }
 
     /* Check if current page is pomodoro page, if not, switch to it first */
-    const char *current_page = lvgl_bridge_get_current_page();
+    const char *current_page = ui_bridge_get_current_page();
     if (current_page == NULL || strcmp(current_page, PAGE_POMODORO) != 0) {
         ESP_LOGI(TAG, "Not on pomodoro page (current=%s), switching to pomodoro page", current_page ? current_page : "NULL");
         main_ui_switch_page(PAGE_POMODORO);
@@ -538,7 +540,6 @@ void alarm_pomodoro_start(void)
         ESP_LOGW(TAG, "Timer not initialized");
         return;
     }
-
 
     esp_lv_adapter_lock(-1);
     bool is_paused = lv_timer_get_paused(s_pomodoro_ui.timer);

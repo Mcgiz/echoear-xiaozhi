@@ -57,7 +57,7 @@ static void touch_btn_event_cb(void *button_handle, void *usr_data)
             return;
         }
         std::string wake_word = "我在摸你猫头";
-        // Application::GetInstance().WakeWordInvoke(wake_word);
+        Application::GetInstance().WakeWordInvoke(wake_word);
         break;
     }
     default:

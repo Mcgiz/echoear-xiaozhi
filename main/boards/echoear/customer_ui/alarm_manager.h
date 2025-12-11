@@ -31,10 +31,10 @@ LV_IMG_DECLARE(watch_bg);
 
 /**
  * @brief Switch to specified page (unified page switching interface)
- * 
+ *
  * This function handles all page visibility and state management in one call.
  * Use this instead of separate hide/show functions.
- * 
+ *
  * @param page_name Target page name to switch to (e.g., "DUMMY", "POMODORO", "SLEEP", "PAGE_TIME_UP")
  */
 void main_ui_switch_page(const char *page_name);

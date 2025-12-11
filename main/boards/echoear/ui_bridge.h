@@ -34,7 +34,7 @@ typedef enum {
     UI_BRIDGE_GESTURE_SWIPE_DOWN,
     UI_BRIDGE_GESTURE_SHORT_PRESS,
     UI_BRIDGE_GESTURE_LONG_PRESS,
-} lvgl_bridge_gesture_type_t;
+} ui_bridge_gesture_type_t;
 
 /**
  * @brief Page switch callback function type
@@ -46,7 +46,7 @@ typedef enum {
  * @param user_data User data passed when registering the callback
  * @return true if handled (skip default switch), false to use default switch
  */
-typedef bool (*lvgl_bridge_page_switch_cb_t)(const char *target_page, void *user_data);
+typedef bool (*ui_bridge_page_switch_cb_t)(const char *target_page, void *user_data);
 
 /**
  * @brief Initialize LVGL display bridge
@@ -57,9 +57,9 @@ typedef bool (*lvgl_bridge_page_switch_cb_t)(const char *target_page, void *user
  * @param display Pointer to the Display instance created by the board
  */
 #ifdef __cplusplus
-void lvgl_bridge_init(Display *display);
+void ui_bridge_init(Display *display);
 #else
-void lvgl_bridge_init(void *display);
+void ui_bridge_init(void *display);
 #endif
 
 /**
@@ -69,18 +69,31 @@ void lvgl_bridge_init(void *display);
  * 
  * @param indev Pointer to the LVGL input device
  */
-void lvgl_bridge_attach_gesture_handler(lv_indev_t *indev);
+void ui_bridge_attach_gesture_handler(lv_indev_t *indev);
 
 /**
  * @brief Register a page container for page switching
  * 
  * Registers a page container that can be switched to via gesture navigation.
+ * By default, the page will be included in cycle navigation.
  * 
  * @param page_id Unique page identifier (e.g., "DUMMY", "POMODORO", "SLEEP", "PAGE_TIME_UP")
  * @param container Pointer to pointer of the container object
  * @return true if registration successful, false otherwise
  */
-bool lvgl_bridge_register_page(const char *page_id, lv_obj_t **container);
+bool ui_bridge_register_page(const char *page_id, lv_obj_t **container);
+
+/**
+ * @brief Register a page container for page switching with cycle control
+ * 
+ * Registers a page container that can be switched to via gesture navigation.
+ * 
+ * @param page_id Unique page identifier (e.g., "DUMMY", "POMODORO", "SLEEP", "PAGE_TIME_UP")
+ * @param container Pointer to pointer of the container object
+ * @param in_cycle Whether this page should be included in cycle navigation (true) or skipped (false)
+ * @return true if registration successful, false otherwise
+ */
+bool ui_bridge_register_page_with_cycle(const char *page_id, lv_obj_t **container, bool in_cycle);
 
 /**
  * @brief Switch to specified page
@@ -89,14 +102,14 @@ bool lvgl_bridge_register_page(const char *page_id, lv_obj_t **container);
  * 
  * @param page_id Target page ID to switch to
  */
-void lvgl_bridge_switch_page(const char *page_id);
+void ui_bridge_switch_page(const char *page_id);
 
 /**
  * @brief Get current page ID
  * 
  * @return Current page ID, or NULL if no page is active
  */
-const char *lvgl_bridge_get_current_page(void);
+const char *ui_bridge_get_current_page(void);
 
 /**
  * @brief Set page switch callback for custom handling
@@ -107,7 +120,7 @@ const char *lvgl_bridge_get_current_page(void);
  * @param cb Callback function (NULL to disable)
  * @param user_data User data to pass to callback
  */
-void lvgl_bridge_set_page_switch_callback(lvgl_bridge_page_switch_cb_t cb, void *user_data);
+void ui_bridge_set_page_switch_callback(ui_bridge_page_switch_cb_t cb, void *user_data);
 
 #ifdef __cplusplus
 }
