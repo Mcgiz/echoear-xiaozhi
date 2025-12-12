@@ -1,4 +1,3 @@
-#include "config.h"
 #include "ui_bridge.h"
 #include "board.h"
 #include "display/emote_display.h"
@@ -50,6 +49,44 @@ static emote::EmoteDisplay *s_cached_emote_display = nullptr;
 /* Forward declarations */
 static void ui_bridge_handle_gesture_navigation(ui_bridge_gesture_type_t gesture_type);
 static void ui_bridge_refresh_emote_display(void);
+static bool ui_bridge_check_gesture_start_position(ui_bridge_gesture_type_t gesture, lv_coord_t start_x, lv_coord_t start_y);
+
+/**
+ * @brief Check if gesture start position is valid for the given gesture direction
+ *
+ * Valid start positions:
+ * - SWIPE_UP:   Bottom edge (y > DISPLAY_HEIGHT - EDGE_THRESHOLD) and center X (±CENTER_RANGE)
+ * - SWIPE_DOWN: Top edge (y < EDGE_THRESHOLD) and center X (±CENTER_RANGE)
+ * - SWIPE_LEFT: Right edge (x > DISPLAY_WIDTH - EDGE_THRESHOLD) and center Y (±CENTER_RANGE)
+ * - SWIPE_RIGHT: Left edge (x < EDGE_THRESHOLD) and center Y (±CENTER_RANGE)
+ */
+static bool ui_bridge_check_gesture_start_position(ui_bridge_gesture_type_t gesture, lv_coord_t start_x, lv_coord_t start_y)
+{
+    switch (gesture) {
+    case UI_BRIDGE_GESTURE_SWIPE_UP:
+        /* Must start from bottom edge and center X */
+        return (start_y > (DISPLAY_HEIGHT - UI_BRIDGE_EDGE_THRESHOLD)) &&
+               (LV_ABS(start_x - UI_BRIDGE_CENTER_X) <= UI_BRIDGE_CENTER_RANGE);
+
+    case UI_BRIDGE_GESTURE_SWIPE_DOWN:
+        /* Must start from top edge and center X */
+        return (start_y < UI_BRIDGE_EDGE_THRESHOLD) &&
+               (LV_ABS(start_x - UI_BRIDGE_CENTER_X) <= UI_BRIDGE_CENTER_RANGE);
+
+    case UI_BRIDGE_GESTURE_SWIPE_LEFT:
+        /* Must start from right edge and center Y */
+        return (start_x > (DISPLAY_WIDTH - UI_BRIDGE_EDGE_THRESHOLD)) &&
+               (LV_ABS(start_y - UI_BRIDGE_CENTER_Y) <= UI_BRIDGE_CENTER_RANGE);
+
+    case UI_BRIDGE_GESTURE_SWIPE_RIGHT:
+        /* Must start from left edge and center Y */
+        return (start_x < UI_BRIDGE_EDGE_THRESHOLD) &&
+               (LV_ABS(start_y - UI_BRIDGE_CENTER_Y) <= UI_BRIDGE_CENTER_RANGE);
+
+    default:
+        return true;  /* No position requirement for other gestures */
+    }
+}
 
 /* Touch gesture event callback */
 static void ui_bridge_gesture_event_cb(lv_event_t *e)
@@ -58,9 +95,6 @@ static void ui_bridge_gesture_event_cb(lv_event_t *e)
     lv_indev_t *indev = lv_indev_get_act();
     ui_bridge_gesture_state_t *state = &s_gesture_state;
 
-    /* Suppress warning for unhandled enum values - we only care about touch events */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wswitch"
     switch (code) {
     case LV_EVENT_PRESSED:
         if (indev) {
@@ -96,9 +130,6 @@ static void ui_bridge_gesture_event_cb(lv_event_t *e)
             last_dy = dy;
         }
 
-        /* Detect swipe gestures during pressing */
-        /* Only recognize as swipe if one axis exceeds threshold while the other doesn't */
-        /* If both exceed threshold, it's likely dragging (e.g., arc), not a swipe */
         bool dx_exceeds = LV_ABS(dx) >= UI_BRIDGE_GESTURE_SWIPE_THRESHOLD;
         bool dy_exceeds = LV_ABS(dy) >= UI_BRIDGE_GESTURE_SWIPE_THRESHOLD;
 
@@ -123,13 +154,17 @@ static void ui_bridge_gesture_event_cb(lv_event_t *e)
             }
 
             if (gesture != UI_BRIDGE_GESTURE_NONE) {
-                ESP_LOGD(TAG, "swipe detected: %d", gesture);
-                /* Handle page navigation directly */
-                // ui_bridge_handle_gesture_navigation(gesture);
-                state->handled = true;
+                if (ui_bridge_check_gesture_start_position(gesture, state->start_x, state->start_y)) {
+                    ESP_LOGD(TAG, "swipe detected: %d (start: %ld, %ld)", gesture,
+                             (long)state->start_x, (long)state->start_y);
+                    // ui_bridge_handle_gesture_navigation(gesture);
+                    state->handled = true;
+                } else {
+                    ESP_LOGD(TAG, "swipe gesture %d rejected: invalid start position (%ld, %ld)",
+                             gesture, (long)state->start_x, (long)state->start_y);
+                }
             }
         } else if (dx_exceeds && dy_exceeds) {
-            /* Both axes exceed threshold - likely dragging (e.g., arc), not a swipe */
             ESP_LOGD(TAG, "Both axes exceed threshold (dx=%ld, dy=%ld) - treating as drag, not swipe",
                      (long)dx, (long)dy);
         }
@@ -181,13 +216,17 @@ static void ui_bridge_gesture_event_cb(lv_event_t *e)
                 }
 
                 if (gesture != UI_BRIDGE_GESTURE_NONE) {
-                    ESP_LOGD(TAG, "swipe detected: %d", gesture);
-                    /* Handle page navigation directly */
-                    ui_bridge_handle_gesture_navigation(gesture);
-                    state->handled = true;
+                    if (ui_bridge_check_gesture_start_position(gesture, state->start_x, state->start_y)) {
+                        ESP_LOGD(TAG, "swipe detected: %d (start: %ld, %ld)", gesture,
+                                 (long)state->start_x, (long)state->start_y);
+                        ui_bridge_handle_gesture_navigation(gesture);
+                        state->handled = true;
+                    } else {
+                        ESP_LOGD(TAG, "swipe gesture %d rejected: invalid start position (%ld, %ld)",
+                                 gesture, (long)state->start_x, (long)state->start_y);
+                    }
                 }
             } else if (dx_exceeds && dy_exceeds) {
-                /* Both axes exceed threshold - likely dragging (e.g., arc), not a swipe */
                 ESP_LOGD(TAG, "Both axes exceed threshold (dx=%ld, dy=%ld) - treating as drag, not swipe",
                          (long)dx, (long)dy);
             } else {
@@ -211,7 +250,6 @@ static void ui_bridge_gesture_event_cb(lv_event_t *e)
         /* Ignore all other events (LV_EVENT_FLUSH_WAIT_START, LV_EVENT_VSYNC, etc.) */
         break;
     }
-#pragma GCC diagnostic pop
 }
 
 /* Internal function to refresh emote display */
@@ -321,7 +359,6 @@ static void ui_bridge_base_container_event_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_CLICKED) {
-        ESP_LOGI(TAG, "Base container clicked");
         auto &app = Application::GetInstance();
         app.ToggleChatState();
     }

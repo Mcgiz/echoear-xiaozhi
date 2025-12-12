@@ -20,6 +20,10 @@ static lv_obj_t *container_pomodoro = NULL;
 static lv_obj_t *container_sleep = NULL;
 static lv_obj_t *container_time_up = NULL;
 
+/* Global sleep end time storage */
+int32_t s_sleep_end_hour = 8;  /* Default end hour */
+int32_t s_sleep_end_min = 0;   /* Default end minute */
+
 // ============================================================================
 // Global Variables
 // ============================================================================
@@ -30,11 +34,10 @@ void main_ui_switch_page(const char *page_name)
     ui_bridge_switch_page(page_name);
 }
 
-/* Page switch callback to handle pomodoro special case */
 static bool main_ui_page_switch_callback(const char *target_page, void *user_data)
 {
-    ESP_LOGD(TAG, "Page switch callback: %s", target_page);
     const char *current_page = ui_bridge_get_current_page();
+    ESP_LOGI(TAG, "Page switch: %s -> %s", current_page ? current_page : "NULL", target_page ? target_page : "NULL");
 
     /* Special handling for pomodoro page */
     if (target_page != NULL && strcmp(target_page, PAGE_POMODORO) == 0 &&
@@ -59,7 +62,8 @@ void alarm_create_ui()
 
     /* Create and register time up container */
     container_time_up = alarm_time_up_create_with_parent(scr);
-    ui_bridge_register_page_with_cycle(PAGE_TIME_UP, &container_time_up, false);
+    // ui_bridge_register_page_with_cycle(PAGE_TIME_UP, &container_time_up, false);
+    ui_bridge_register_page_with_cycle(PAGE_TIME_UP, &container_time_up, true);
 
     /* Register page switch callback for custom handling (e.g., pomodoro) */
     ui_bridge_set_page_switch_callback(main_ui_page_switch_callback, NULL);
@@ -121,11 +125,15 @@ void alarm_start_sleep(int32_t end_hour, int32_t end_min)
         end_min = 0;
     }
 
+    /* Store end time globally */
+    s_sleep_end_hour = end_hour;
+    s_sleep_end_min = end_min;
+
     ESP_LOGI(TAG, "Show sleep page with end time: %02ld:%02ld (start time will be current time)",
              (long)end_hour, (long)end_min);
 
     /* Configure sleep timer first (start time is current time), then switch page */
-    alarm_sleep_24h_set_time_range(end_hour, end_min);
+    alarm_sleep_24h_set_end_time(end_hour, end_min);
     main_ui_switch_page(PAGE_SLEEP);
 }
 
@@ -143,8 +151,24 @@ void alarm_set_sleep_end_time(int32_t end_hour, int32_t end_min)
         end_min = 0;
     }
 
+    /* Store end time globally */
+    s_sleep_end_hour = end_hour;
+    s_sleep_end_min = end_min;
+
     ESP_LOGI(TAG, "Set sleep end time: %02ld:%02ld", (long)end_hour, (long)end_min);
 
-    /* Configure sleep end time only */
-    alarm_sleep_24h_set_end_time(end_hour, end_min);
+    /* Update UI via internal function (avoid recursive call) */
+    alarm_sleep_24h_update_ui_internal(end_hour, end_min);
+}
+
+bool alarm_get_sleep_end_time(int32_t *end_hour, int32_t *end_min)
+{
+    if (end_hour == NULL || end_min == NULL) {
+        return false;
+    }
+
+    *end_hour = s_sleep_end_hour;
+    *end_min = s_sleep_end_min;
+
+    return true;
 }

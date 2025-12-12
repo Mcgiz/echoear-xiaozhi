@@ -68,6 +68,17 @@ void alarm_start_sleep(int32_t end_hour, int32_t end_min);
  */
 void alarm_set_sleep_end_time(int32_t end_hour, int32_t end_min);
 
+/**
+ * @brief Get sleep end time
+ *
+ * Gets the stored end time for the sleep timer.
+ *
+ * @param end_hour Pointer to store end hour (0-23), can be NULL
+ * @param end_min  Pointer to store end minute (0-59), can be NULL
+ * @return true if successful, false otherwise
+ */
+bool alarm_get_sleep_end_time(int32_t *end_hour, int32_t *end_min);
+
 #ifdef __cplusplus
 }
 #endif

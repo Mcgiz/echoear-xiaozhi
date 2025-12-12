@@ -2,6 +2,7 @@
 #define LVGL_DISPLAY_BRIDGE_H
 
 #include "lvgl.h"
+#include "config.h"
 
 /**
  * @file ui_bridge.h
@@ -12,11 +13,17 @@
  */
 
 /* Page name constants */
-#define UI_BRIDGE_PAGE_HOME     "DUMMY"  /* Base emote display page */
+#define UI_BRIDGE_PAGE_HOME                      "DUMMY"  /* Base emote display page */
 
 /* Gesture detection constants */
-#define UI_BRIDGE_GESTURE_LONG_PRESS_TIME_MS    500  /* Long press duration in milliseconds */
-#define UI_BRIDGE_GESTURE_SWIPE_THRESHOLD       80   /* Minimum distance for swipe detection */
+#define UI_BRIDGE_GESTURE_LONG_PRESS_TIME_MS     500      /* Long press duration in milliseconds */
+#define UI_BRIDGE_GESTURE_SWIPE_THRESHOLD        80       /* Minimum distance for swipe detection */
+
+/* Gesture start position validation constants */
+#define UI_BRIDGE_EDGE_THRESHOLD                 30       /* Distance from edge to be considered edge region */
+#define UI_BRIDGE_CENTER_RANGE                   50       /* Range around center (±50 pixels) */
+#define UI_BRIDGE_CENTER_X                       (DISPLAY_WIDTH / 2)   /* Center X coordinate */
+#define UI_BRIDGE_CENTER_Y                       (DISPLAY_HEIGHT / 2)  /* Center Y coordinate */
 
 #ifdef __cplusplus
 class Display;

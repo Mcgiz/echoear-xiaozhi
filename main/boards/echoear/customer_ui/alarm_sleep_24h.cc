@@ -11,6 +11,7 @@
 #include <time.h>
 #include <string.h>  /* For strcmp */
 #include "alarm_manager.h"
+#include "alarm_api.h"
 #include "alarm_end.h"
 
 #define DAY_SECONDS           (24 * 60 * 60)
@@ -139,32 +140,48 @@ static void update_start_time_display(alarm_sleep_24h_ui_t *ui)
     }
 }
 
-static void update_range_from_angles(alarm_sleep_24h_ui_t *ui)
+static void update_range_from_angles(alarm_sleep_24h_ui_t *ui, bool sync_from_storage)
 {
     /* Start time is always current time */
     update_start_time_display(ui);
 
-    int32_t end_total_sec   = (ui->end_angle   * DAY_SECONDS) / 360;
-    int32_t end_hour_24   = end_total_sec / 3600;
-    int32_t end_min       = (end_total_sec % 3600) / 60;
+    /* Get current time */
+    int32_t current_hour, current_min;
+    get_current_time(&current_hour, &current_min);
+    int32_t current_total_sec = current_hour * 3600 + current_min * 60;
+
+    int32_t end_hour, end_min;
+    int32_t end_total_sec;
+
+    if (sync_from_storage) {
+        /* Get stored end time from global storage and sync to angle */
+        alarm_get_sleep_end_time(&end_hour, &end_min);
+        end_total_sec = end_hour * 3600 + end_min * 60;
+        ui->end_angle = (end_total_sec * 360) / DAY_SECONDS;
+    } else {
+        /* Calculate end time from current angle and update global storage */
+        end_total_sec = (ui->end_angle * DAY_SECONDS) / 360;
+        end_hour = end_total_sec / 3600;
+        end_min = (end_total_sec % 3600) / 60;
+        
+        /* Validate and update global storage directly (avoid recursive call) */
+        if (end_hour < 0 || end_hour >= 24) {
+            end_hour = DEFAULT_END_HOUR;
+        }
+        if (end_min < 0 || end_min >= 60) {
+            end_min = 0;
+        }
+        
+        /* Update global storage via extern declaration */
+        extern int32_t s_sleep_end_hour;
+        extern int32_t s_sleep_end_min;
+        s_sleep_end_hour = end_hour;
+        s_sleep_end_min = end_min;
+        
+        ESP_LOGD(TAG, "End time updated from drag: %02ld:%02ld", (long)end_hour, (long)end_min);
+    }
 
     int32_t start_total_sec = (ui->start_angle * DAY_SECONDS) / 360;
-
-    /* Check if end time equals start time (current time) */
-    if (end_total_sec == start_total_sec && !ui->has_jumped_to_time_up) {
-        /* Only jump if currently on SLEEP page */
-        const char *current_page = ui_bridge_get_current_page();
-        if (current_page != NULL && strcmp(current_page, PAGE_SLEEP) == 0) {
-            ESP_LOGI(TAG, "End time equals start time (current time) - jumping to time up page");
-            ui->has_jumped_to_time_up = true;
-            alarm_time_up_set_origin(PAGE_SLEEP);
-            main_ui_switch_page(PAGE_TIME_UP);
-            return;  /* Don't update UI if jumping away */
-        }
-    } else if (end_total_sec != start_total_sec) {
-        /* Reset flag when times are different again */
-        ui->has_jumped_to_time_up = false;
-    }
 
     int32_t duration_sec;
     if (end_total_sec >= start_total_sec) {
@@ -174,11 +191,11 @@ static void update_range_from_angles(alarm_sleep_24h_ui_t *ui)
     }
     float duration_hours = duration_sec / 3600.0f;
 
-    int32_t end_hour_12 = end_hour_24 % 12;
+    int32_t end_hour_12 = end_hour % 12;
     if (end_hour_12 == 0) {
         end_hour_12 = 12;
     }
-    const char *end_ampm = (end_hour_24 < 12) ? "AM" : "PM";
+    const char *end_ampm = (end_hour < 12) ? "AM" : "PM";
 
     if (ui->show_duration) {
         if (ui->time_container) {
@@ -209,14 +226,6 @@ static void update_range_from_angles(alarm_sleep_24h_ui_t *ui)
 
     lv_arc_set_angles(ui->range_arc, (int16_t)ui->start_angle, (int16_t)ui->end_angle);
     update_knob_positions(ui);
-
-    /* Get current time for logging */
-    int32_t start_hour_24, start_min;
-    get_current_time(&start_hour_24, &start_min);
-
-    ESP_LOGD(TAG, "range: start=%ld° -> %02ld:%02ld (current), end=%ld° -> %02ld:%02ld",
-             (long)ui->start_angle, (long)start_hour_24, (long)start_min,
-             (long)ui->end_angle, (long)end_hour_24, (long)end_min);
 }
 
 static void get_arc_center_abs(lv_obj_t *arc, lv_coord_t *center_x, lv_coord_t *center_y)
@@ -248,15 +257,41 @@ static void time_update_timer_cb(lv_timer_t *timer)
         return;
     }
 
+    /* Check if end time equals current time (check regardless of page visibility) */
+    int32_t current_hour, current_min;
+    get_current_time(&current_hour, &current_min);
+    int32_t current_total_sec = current_hour * 3600 + current_min * 60;
+
+    int32_t end_hour, end_min;
+    alarm_get_sleep_end_time(&end_hour, &end_min);
+    int32_t end_total_sec = end_hour * 3600 + end_min * 60;
+
+    if (end_total_sec == current_total_sec && !ui->has_jumped_to_time_up) {
+        ESP_LOGI(TAG, "Time up, end time: %02ld:%02ld", (long)end_hour, (long)end_min);
+        ui->has_jumped_to_time_up = true;
+        alarm_time_up_set_origin(PAGE_SLEEP);
+        main_ui_switch_page(PAGE_TIME_UP);
+        return;
+    } else if (end_total_sec != current_total_sec) {
+        ui->has_jumped_to_time_up = false;
+    }
+
+    /* Log every minute when minute changes */
+    static int32_t last_logged_min = -1;
+    if (current_min != last_logged_min) {
+        last_logged_min = current_min;
+        ESP_LOGI(TAG, "range: start=%ld° -> %02ld:%02ld, end=%ld° -> %02ld:%02ld",
+                 (long)ui->start_angle, (long)current_hour, (long)current_min,
+                 (long)ui->end_angle, (long)end_hour, (long)end_min);
+    }
+
     /* Check if container is visible */
     if (lv_obj_has_flag(ui->container, LV_OBJ_FLAG_HIDDEN)) {
         return;
     }
 
-    esp_lv_adapter_lock(-1);
     update_start_time_display(ui);
-    update_range_from_angles(ui);
-    esp_lv_adapter_unlock();
+    update_range_from_angles(ui, true);  /* Sync from storage */
 }
 
 static void center_btn_event_handler(lv_event_t *e)
@@ -267,7 +302,7 @@ static void center_btn_event_handler(lv_event_t *e)
     if (code == LV_EVENT_CLICKED) {
         ui->show_duration = !ui->show_duration;
         ESP_LOGI(TAG, "Toggled duration display: %s", ui->show_duration ? "ON" : "OFF");
-        update_range_from_angles(ui);
+        update_range_from_angles(ui, false);  /* Don't sync, use current angle */
     }
 }
 
@@ -305,7 +340,8 @@ static void end_knob_event_handler(lv_event_t *e)
         }
 
         ui->end_angle = (int32_t)angle;
-        update_range_from_angles(ui);
+        /* Update from angle (don't sync from storage, update storage from angle) */
+        update_range_from_angles(ui, false);
     }
 }
 
@@ -495,10 +531,10 @@ lv_obj_t *alarm_sleep_24h_create_with_parent(lv_obj_t *parent)
     lv_obj_add_event_cb(s_sleep_24h_ui.end_knob_img, end_knob_event_handler, LV_EVENT_ALL, &s_sleep_24h_ui);
 
     lv_obj_update_layout(s_sleep_24h_ui.container);
-    update_range_from_angles(&s_sleep_24h_ui);
+    update_range_from_angles(&s_sleep_24h_ui, true);  /* Sync from storage */
 
     /* Create timer to update start time (current time) every minute */
-    s_sleep_24h_ui.time_update_timer = lv_timer_create(time_update_timer_cb, 5 * 1000, &s_sleep_24h_ui);  /* Update every minute */
+    s_sleep_24h_ui.time_update_timer = lv_timer_create(time_update_timer_cb, 500, &s_sleep_24h_ui);  /* Update every minute */
     lv_timer_set_repeat_count(s_sleep_24h_ui.time_update_timer, -1);  /* Repeat indefinitely */
 
     ESP_LOGI(TAG, "Sleep 24h UI created: start=%ld° (current time), end=%ld°",
@@ -518,21 +554,12 @@ void alarm_sleep_24h_trigger_center_btn(void)
     }
 }
 
-void alarm_sleep_24h_set_time_range(int32_t end_hour, int32_t end_min)
+/* Internal function to update UI only (no global storage) */
+void alarm_sleep_24h_update_ui_internal(int32_t end_hour, int32_t end_min)
 {
     /* Get current time as start time */
     int32_t start_hour, start_min;
     get_current_time(&start_hour, &start_min);
-
-    /* Validate end time parameters */
-    if (end_hour < 0 || end_hour >= 24) {
-        ESP_LOGW(TAG, "Invalid end_hour: %ld, using default", (long)end_hour);
-        end_hour = DEFAULT_END_HOUR;
-    }
-    if (end_min < 0 || end_min >= 60) {
-        ESP_LOGW(TAG, "Invalid end_min: %ld, using 0", (long)end_min);
-        end_min = 0;
-    }
 
     /* Calculate total seconds from midnight */
     int32_t start_total_sec = start_hour * 3600 + start_min * 60;
@@ -543,24 +570,20 @@ void alarm_sleep_24h_set_time_range(int32_t end_hour, int32_t end_min)
     s_sleep_24h_ui.end_angle = (end_total_sec * 360) / DAY_SECONDS;
     s_sleep_24h_ui.has_jumped_to_time_up = false;  /* Reset flag when time is set */
 
-    ESP_LOGI(TAG, "Set sleep time range: %02ld:%02ld (current) -> %02ld:%02ld (start=%ld°, end=%ld°)",
+    ESP_LOGI(TAG, "Update sleep UI: %02ld:%02ld (current) -> %02ld:%02ld (start=%ld°, end=%ld°)",
              (long)start_hour, (long)start_min, (long)end_hour, (long)end_min,
              (long)s_sleep_24h_ui.start_angle, (long)s_sleep_24h_ui.end_angle);
 
     /* Update UI if container exists */
     if (s_sleep_24h_ui.container) {
         esp_lv_adapter_lock(-1);
-        update_range_from_angles(&s_sleep_24h_ui);
+        update_range_from_angles(&s_sleep_24h_ui, true);  /* Sync from storage */
         esp_lv_adapter_unlock();
     }
 }
 
 void alarm_sleep_24h_set_end_time(int32_t end_hour, int32_t end_min)
 {
-    /* Get current time as start time */
-    int32_t start_hour, start_min;
-    get_current_time(&start_hour, &start_min);
-
     /* Validate end time parameters */
     if (end_hour < 0 || end_hour >= 24) {
         ESP_LOGW(TAG, "Invalid end_hour: %ld, using default", (long)end_hour);
@@ -571,23 +594,39 @@ void alarm_sleep_24h_set_end_time(int32_t end_hour, int32_t end_min)
         end_min = 0;
     }
 
-    /* Calculate total seconds from midnight */
-    int32_t start_total_sec = start_hour * 3600 + start_min * 60;
-    int32_t end_total_sec = end_hour * 3600 + end_min * 60;
+    /* Store end time globally and update UI */
+    alarm_set_sleep_end_time(end_hour, end_min);
+}
 
-    /* Convert to angles (0-360 degrees) */
-    s_sleep_24h_ui.start_angle = (start_total_sec * 360) / DAY_SECONDS;
-    s_sleep_24h_ui.end_angle = (end_total_sec * 360) / DAY_SECONDS;
-    s_sleep_24h_ui.has_jumped_to_time_up = false;  /* Reset flag when time is set */
+bool alarm_sleep_24h_get_end_time(int32_t *end_hour, int32_t *end_min)
+{
+    /* Get end time from global storage in alarm_manager */
+    return alarm_get_sleep_end_time(end_hour, end_min);
+}
 
-    ESP_LOGI(TAG, "Set sleep end time: %02ld:%02ld (current) -> %02ld:%02ld (start=%ld°, end=%ld°)",
-             (long)start_hour, (long)start_min, (long)end_hour, (long)end_min,
-             (long)s_sleep_24h_ui.start_angle, (long)s_sleep_24h_ui.end_angle);
-
-    /* Update UI if container exists */
-    if (s_sleep_24h_ui.container) {
-        esp_lv_adapter_lock(-1);
-        update_range_from_angles(&s_sleep_24h_ui);
-        esp_lv_adapter_unlock();
+void alarm_sleep_24h_snooze(int32_t minutes)
+{
+    if (minutes <= 0) {
+        minutes = 5;  /* Default to 5 minutes */
     }
+
+    /* Get current time */
+    int32_t current_hour, current_min;
+    get_current_time(&current_hour, &current_min);
+
+    /* Calculate current time + minutes */
+    int32_t current_min_total = current_hour * 60 + current_min;
+    int32_t new_min_total = current_min_total + minutes;
+    int32_t new_hour = new_min_total / 60;
+    int32_t new_min = new_min_total % 60;
+
+    /* Handle day overflow (24-hour format) */
+    new_hour = new_hour % 24;
+
+    ESP_LOGI(TAG, "Snooze timer: %02ld:%02ld -> %02ld:%02ld (+%ld min)",
+             (long)current_hour, (long)current_min, (long)new_hour, (long)new_min, (long)minutes);
+
+    /* Update end time */
+    alarm_set_sleep_end_time(new_hour, new_min);
+    main_ui_switch_page(PAGE_SLEEP);
 }
