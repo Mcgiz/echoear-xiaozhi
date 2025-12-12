@@ -8,7 +8,10 @@
 #include "esp_log.h"
 #include <stdio.h>
 #include <math.h>
+#include <time.h>
+#include <string.h>  /* For strcmp */
 #include "alarm_manager.h"
+#include "alarm_end.h"
 
 #define DAY_SECONDS           (24 * 60 * 60)
 #define DEFAULT_START_HOUR    22
@@ -34,12 +37,26 @@ typedef struct {
     lv_obj_t *center_btn;
     lv_obj_t *start_knob_img;
     lv_obj_t *end_knob_img;
+    lv_timer_t *time_update_timer;
     int32_t start_angle;
     int32_t end_angle;
     bool show_duration;
+    bool has_jumped_to_time_up;  /* Flag to prevent repeated jumps */
 } alarm_sleep_24h_ui_t;
 
 static alarm_sleep_24h_ui_t s_sleep_24h_ui;
+
+static void get_current_time(int32_t *hour, int32_t *min)
+{
+    time_t now;
+    struct tm timeinfo;
+
+    time(&now);
+    localtime_r(&now, &timeinfo);
+
+    *hour = timeinfo.tm_hour;
+    *min = timeinfo.tm_min;
+}
 
 static float calculate_angle_from_center(lv_coord_t center_x, lv_coord_t center_y,
                                          lv_coord_t point_x, lv_coord_t point_y)
@@ -62,7 +79,7 @@ static float calculate_angle_from_center(lv_coord_t center_x, lv_coord_t center_
 
 static void update_knob_positions(alarm_sleep_24h_ui_t *ui)
 {
-    if (!ui->range_arc || !ui->start_knob_img || !ui->end_knob_img) {
+    if (!ui->range_arc) {
         return;
     }
 
@@ -75,32 +92,79 @@ static void update_knob_positions(alarm_sleep_24h_ui_t *ui)
     lv_coord_t arc_x = lv_obj_get_x(ui->range_arc);
     lv_coord_t arc_y = lv_obj_get_y(ui->range_arc);
 
-    lv_coord_t start_w = lv_obj_get_width(ui->start_knob_img);
-    lv_coord_t start_h = lv_obj_get_height(ui->start_knob_img);
-    lv_coord_t end_w   = lv_obj_get_width(ui->end_knob_img);
-    lv_coord_t end_h   = lv_obj_get_height(ui->end_knob_img);
+    /* Update start knob position (current time indicator) */
+    if (ui->start_knob_img) {
+        lv_coord_t start_w = lv_obj_get_width(ui->start_knob_img);
+        lv_coord_t start_h = lv_obj_get_height(ui->start_knob_img);
+        float start_rad = (90.0f - (float)ui->start_angle) * (float)M_PI / 180.0f;
+        lv_coord_t start_x = arc_x + center_x + (lv_coord_t)(radius * cosf(start_rad)) - start_w / 2;
+        lv_coord_t start_y = arc_y + center_y - (lv_coord_t)(radius * sinf(start_rad)) - start_h / 2;
+        lv_obj_set_pos(ui->start_knob_img, start_x, start_y);
+    }
 
-    float start_rad = (90.0f - (float)ui->start_angle) * (float)M_PI / 180.0f;
-    float end_rad   = (90.0f - (float)ui->end_angle)   * (float)M_PI / 180.0f;
+    /* Update end knob position */
+    if (ui->end_knob_img) {
+        lv_coord_t end_w   = lv_obj_get_width(ui->end_knob_img);
+        lv_coord_t end_h   = lv_obj_get_height(ui->end_knob_img);
+        float end_rad   = (90.0f - (float)ui->end_angle)   * (float)M_PI / 180.0f;
+        lv_coord_t end_x   = arc_x + center_x + (lv_coord_t)(radius * cosf(end_rad))   - end_w / 2;
+        lv_coord_t end_y   = arc_y + center_y - (lv_coord_t)(radius * sinf(end_rad))   - end_h / 2;
+        lv_obj_set_pos(ui->end_knob_img, end_x, end_y);
+    }
+}
 
-    lv_coord_t start_x = arc_x + center_x + (lv_coord_t)(radius * cosf(start_rad)) - start_w / 2;
-    lv_coord_t start_y = arc_y + center_y - (lv_coord_t)(radius * sinf(start_rad)) - start_h / 2;
-    lv_coord_t end_x   = arc_x + center_x + (lv_coord_t)(radius * cosf(end_rad))   - end_w / 2;
-    lv_coord_t end_y   = arc_y + center_y - (lv_coord_t)(radius * sinf(end_rad))   - end_h / 2;
+static void update_start_time_display(alarm_sleep_24h_ui_t *ui)
+{
+    /* Get current time */
+    int32_t start_hour_24, start_min;
 
-    lv_obj_set_pos(ui->start_knob_img, start_x, start_y);
-    lv_obj_set_pos(ui->end_knob_img, end_x, end_y);
+    get_current_time(&start_hour_24, &start_min);
+
+    /* Update start angle based on current time */
+    int32_t start_total_sec = start_hour_24 * 3600 + start_min * 60;
+    ui->start_angle = (start_total_sec * 360) / DAY_SECONDS;
+
+    /* Format for display */
+    int32_t start_hour_12 = start_hour_24 % 12;
+    if (start_hour_12 == 0) {
+        start_hour_12 = 12;
+    }
+    const char *start_ampm = (start_hour_24 < 12) ? "AM" : "PM";
+
+    /* Update labels */
+    if (ui->start_hour_label && ui->start_min_label && ui->start_ampm_label) {
+        lv_label_set_text_fmt(ui->start_hour_label, "%ld", (long)start_hour_12);
+        lv_label_set_text_fmt(ui->start_min_label, "%02ld", (long)start_min);
+        lv_label_set_text(ui->start_ampm_label, start_ampm);
+    }
 }
 
 static void update_range_from_angles(alarm_sleep_24h_ui_t *ui)
 {
-    int32_t start_total_sec = (ui->start_angle * DAY_SECONDS) / 360;
-    int32_t end_total_sec   = (ui->end_angle   * DAY_SECONDS) / 360;
+    /* Start time is always current time */
+    update_start_time_display(ui);
 
-    int32_t start_hour_24 = start_total_sec / 3600;
-    int32_t start_min     = (start_total_sec % 3600) / 60;
+    int32_t end_total_sec   = (ui->end_angle   * DAY_SECONDS) / 360;
     int32_t end_hour_24   = end_total_sec / 3600;
     int32_t end_min       = (end_total_sec % 3600) / 60;
+
+    int32_t start_total_sec = (ui->start_angle * DAY_SECONDS) / 360;
+
+    /* Check if end time equals start time (current time) */
+    if (end_total_sec == start_total_sec && !ui->has_jumped_to_time_up) {
+        /* Only jump if currently on SLEEP page */
+        const char *current_page = ui_bridge_get_current_page();
+        if (current_page != NULL && strcmp(current_page, PAGE_SLEEP) == 0) {
+            ESP_LOGI(TAG, "End time equals start time (current time) - jumping to time up page");
+            ui->has_jumped_to_time_up = true;
+            alarm_time_up_set_origin(PAGE_SLEEP);
+            main_ui_switch_page(PAGE_TIME_UP);
+            return;  /* Don't update UI if jumping away */
+        }
+    } else if (end_total_sec != start_total_sec) {
+        /* Reset flag when times are different again */
+        ui->has_jumped_to_time_up = false;
+    }
 
     int32_t duration_sec;
     if (end_total_sec >= start_total_sec) {
@@ -109,12 +173,6 @@ static void update_range_from_angles(alarm_sleep_24h_ui_t *ui)
         duration_sec = (DAY_SECONDS - start_total_sec) + end_total_sec;
     }
     float duration_hours = duration_sec / 3600.0f;
-
-    int32_t start_hour_12 = start_hour_24 % 12;
-    if (start_hour_12 == 0) {
-        start_hour_12 = 12;
-    }
-    const char *start_ampm = (start_hour_24 < 12) ? "AM" : "PM";
 
     int32_t end_hour_12 = end_hour_24 % 12;
     if (end_hour_12 == 0) {
@@ -138,12 +196,9 @@ static void update_range_from_angles(alarm_sleep_24h_ui_t *ui)
             lv_obj_clear_flag(ui->time_container, LV_OBJ_FLAG_HIDDEN);
         }
 
-        if (ui->start_hour_label && ui->start_min_label && ui->start_ampm_label &&
-                ui->center_sep_label && ui->end_hour_label && ui->end_min_label && ui->end_ampm_label) {
-            lv_label_set_text_fmt(ui->start_hour_label, "%ld", (long)start_hour_12);
-            lv_label_set_text_fmt(ui->start_min_label, "%02ld", (long)start_min);
-            lv_label_set_text(ui->start_ampm_label, start_ampm);
-
+        /* Start time is already updated by update_start_time_display() */
+        /* Only update end time display */
+        if (ui->center_sep_label && ui->end_hour_label && ui->end_min_label && ui->end_ampm_label) {
             lv_label_set_text(ui->center_sep_label, "|");
 
             lv_label_set_text_fmt(ui->end_hour_label, "%ld", (long)end_hour_12);
@@ -155,7 +210,11 @@ static void update_range_from_angles(alarm_sleep_24h_ui_t *ui)
     lv_arc_set_angles(ui->range_arc, (int16_t)ui->start_angle, (int16_t)ui->end_angle);
     update_knob_positions(ui);
 
-    ESP_LOGD(TAG, "range: start=%ld° -> %02ld:%02ld, end=%ld° -> %02ld:%02ld",
+    /* Get current time for logging */
+    int32_t start_hour_24, start_min;
+    get_current_time(&start_hour_24, &start_min);
+
+    ESP_LOGD(TAG, "range: start=%ld° -> %02ld:%02ld (current), end=%ld° -> %02ld:%02ld",
              (long)ui->start_angle, (long)start_hour_24, (long)start_min,
              (long)ui->end_angle, (long)end_hour_24, (long)end_min);
 }
@@ -182,42 +241,22 @@ static void get_arc_center_abs(lv_obj_t *arc, lv_coord_t *center_x, lv_coord_t *
     *center_y = y;
 }
 
-static void start_knob_event_handler(lv_event_t *e)
+static void time_update_timer_cb(lv_timer_t *timer)
 {
-    lv_event_code_t code = lv_event_get_code(e);
-    alarm_sleep_24h_ui_t *ui = (alarm_sleep_24h_ui_t *)lv_event_get_user_data(e);
-
-    if (code == LV_EVENT_PRESSED) {
-        lv_obj_t *knob = (lv_obj_t *)lv_event_get_target(e);
-        lv_obj_set_style_transform_scale(knob, 280, 0);
-    } else if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
-        lv_obj_t *knob = (lv_obj_t *)lv_event_get_target(e);
-        lv_obj_set_style_transform_scale(knob, 256, 0);
+    alarm_sleep_24h_ui_t *ui = (alarm_sleep_24h_ui_t *)lv_timer_get_user_data(timer);
+    if (!ui || !ui->container) {
+        return;
     }
 
-    if (code == LV_EVENT_PRESSING || code == LV_EVENT_PRESSED) {
-        lv_indev_t *indev = lv_indev_get_act();
-        if (indev == NULL) {
-            return;
-        }
-
-        lv_point_t point;
-        lv_indev_get_point(indev, &point);
-
-        lv_coord_t cx = 0;
-        lv_coord_t cy = 0;
-        get_arc_center_abs(ui->range_arc, &cx, &cy);
-
-        float angle = calculate_angle_from_center(cx, cy, point.x, point.y);
-        if (angle < 0.0f) {
-            angle = 0.0f;
-        } else if (angle > 360.0f) {
-            angle = 360.0f;
-        }
-
-        ui->start_angle = (int32_t)angle;
-        update_range_from_angles(ui);
+    /* Check if container is visible */
+    if (lv_obj_has_flag(ui->container, LV_OBJ_FLAG_HIDDEN)) {
+        return;
     }
+
+    esp_lv_adapter_lock(-1);
+    update_start_time_display(ui);
+    update_range_from_angles(ui);
+    esp_lv_adapter_unlock();
 }
 
 static void center_btn_event_handler(lv_event_t *e)
@@ -274,6 +313,7 @@ lv_obj_t *alarm_sleep_24h_create_with_parent(lv_obj_t *parent)
 {
     s_sleep_24h_ui.start_angle = (DEFAULT_START_HOUR * 360) / 24;
     s_sleep_24h_ui.end_angle   = (DEFAULT_END_HOUR   * 360) / 24;
+    s_sleep_24h_ui.has_jumped_to_time_up = false;
 
     s_sleep_24h_ui.container = lv_obj_create(parent);
     lv_obj_set_size(s_sleep_24h_ui.container, SCREEN_WIDTH, SCREEN_HEIGHT);
@@ -442,11 +482,11 @@ lv_obj_t *alarm_sleep_24h_create_with_parent(lv_obj_t *parent)
 
     s_sleep_24h_ui.show_duration = false;
 
+    /* Create start knob image (display only, not clickable - shows current time position) */
     s_sleep_24h_ui.start_knob_img = lv_img_create(s_sleep_24h_ui.container);
     lv_img_set_src(s_sleep_24h_ui.start_knob_img, &time_start);
     lv_obj_clear_flag(s_sleep_24h_ui.start_knob_img, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(s_sleep_24h_ui.start_knob_img, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(s_sleep_24h_ui.start_knob_img, start_knob_event_handler, LV_EVENT_ALL, &s_sleep_24h_ui);
+    lv_obj_clear_flag(s_sleep_24h_ui.start_knob_img, LV_OBJ_FLAG_CLICKABLE);  /* Not clickable - read-only indicator */
 
     s_sleep_24h_ui.end_knob_img = lv_img_create(s_sleep_24h_ui.container);
     lv_img_set_src(s_sleep_24h_ui.end_knob_img, &time_sleep);
@@ -457,7 +497,11 @@ lv_obj_t *alarm_sleep_24h_create_with_parent(lv_obj_t *parent)
     lv_obj_update_layout(s_sleep_24h_ui.container);
     update_range_from_angles(&s_sleep_24h_ui);
 
-    ESP_LOGI(TAG, "Sleep 24h UI created: start=%ld°, end=%ld°",
+    /* Create timer to update start time (current time) every minute */
+    s_sleep_24h_ui.time_update_timer = lv_timer_create(time_update_timer_cb, 5 * 1000, &s_sleep_24h_ui);  /* Update every minute */
+    lv_timer_set_repeat_count(s_sleep_24h_ui.time_update_timer, -1);  /* Repeat indefinitely */
+
+    ESP_LOGI(TAG, "Sleep 24h UI created: start=%ld° (current time), end=%ld°",
              (long)s_sleep_24h_ui.start_angle, (long)s_sleep_24h_ui.end_angle);
 
     lv_obj_add_flag(s_sleep_24h_ui.container, LV_OBJ_FLAG_HIDDEN);
@@ -470,6 +514,80 @@ void alarm_sleep_24h_trigger_center_btn(void)
     if (s_sleep_24h_ui.center_btn) {
         esp_lv_adapter_lock(-1);
         lv_obj_send_event(s_sleep_24h_ui.center_btn, LV_EVENT_CLICKED, NULL);
+        esp_lv_adapter_unlock();
+    }
+}
+
+void alarm_sleep_24h_set_time_range(int32_t end_hour, int32_t end_min)
+{
+    /* Get current time as start time */
+    int32_t start_hour, start_min;
+    get_current_time(&start_hour, &start_min);
+
+    /* Validate end time parameters */
+    if (end_hour < 0 || end_hour >= 24) {
+        ESP_LOGW(TAG, "Invalid end_hour: %ld, using default", (long)end_hour);
+        end_hour = DEFAULT_END_HOUR;
+    }
+    if (end_min < 0 || end_min >= 60) {
+        ESP_LOGW(TAG, "Invalid end_min: %ld, using 0", (long)end_min);
+        end_min = 0;
+    }
+
+    /* Calculate total seconds from midnight */
+    int32_t start_total_sec = start_hour * 3600 + start_min * 60;
+    int32_t end_total_sec = end_hour * 3600 + end_min * 60;
+
+    /* Convert to angles (0-360 degrees) */
+    s_sleep_24h_ui.start_angle = (start_total_sec * 360) / DAY_SECONDS;
+    s_sleep_24h_ui.end_angle = (end_total_sec * 360) / DAY_SECONDS;
+    s_sleep_24h_ui.has_jumped_to_time_up = false;  /* Reset flag when time is set */
+
+    ESP_LOGI(TAG, "Set sleep time range: %02ld:%02ld (current) -> %02ld:%02ld (start=%ld°, end=%ld°)",
+             (long)start_hour, (long)start_min, (long)end_hour, (long)end_min,
+             (long)s_sleep_24h_ui.start_angle, (long)s_sleep_24h_ui.end_angle);
+
+    /* Update UI if container exists */
+    if (s_sleep_24h_ui.container) {
+        esp_lv_adapter_lock(-1);
+        update_range_from_angles(&s_sleep_24h_ui);
+        esp_lv_adapter_unlock();
+    }
+}
+
+void alarm_sleep_24h_set_end_time(int32_t end_hour, int32_t end_min)
+{
+    /* Get current time as start time */
+    int32_t start_hour, start_min;
+    get_current_time(&start_hour, &start_min);
+
+    /* Validate end time parameters */
+    if (end_hour < 0 || end_hour >= 24) {
+        ESP_LOGW(TAG, "Invalid end_hour: %ld, using default", (long)end_hour);
+        end_hour = DEFAULT_END_HOUR;
+    }
+    if (end_min < 0 || end_min >= 60) {
+        ESP_LOGW(TAG, "Invalid end_min: %ld, using 0", (long)end_min);
+        end_min = 0;
+    }
+
+    /* Calculate total seconds from midnight */
+    int32_t start_total_sec = start_hour * 3600 + start_min * 60;
+    int32_t end_total_sec = end_hour * 3600 + end_min * 60;
+
+    /* Convert to angles (0-360 degrees) */
+    s_sleep_24h_ui.start_angle = (start_total_sec * 360) / DAY_SECONDS;
+    s_sleep_24h_ui.end_angle = (end_total_sec * 360) / DAY_SECONDS;
+    s_sleep_24h_ui.has_jumped_to_time_up = false;  /* Reset flag when time is set */
+
+    ESP_LOGI(TAG, "Set sleep end time: %02ld:%02ld (current) -> %02ld:%02ld (start=%ld°, end=%ld°)",
+             (long)start_hour, (long)start_min, (long)end_hour, (long)end_min,
+             (long)s_sleep_24h_ui.start_angle, (long)s_sleep_24h_ui.end_angle);
+
+    /* Update UI if container exists */
+    if (s_sleep_24h_ui.container) {
+        esp_lv_adapter_lock(-1);
+        update_range_from_angles(&s_sleep_24h_ui);
         esp_lv_adapter_unlock();
     }
 }

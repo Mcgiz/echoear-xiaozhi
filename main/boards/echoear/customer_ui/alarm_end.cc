@@ -7,8 +7,10 @@
 #include "lvgl.h"
 #include "esp_log.h"
 #include <stdio.h>
+#include <string>
 #include "alarm_manager.h"
 #include "alarm_api.h"
+#include "application.h"
 
 static const char *TAG = "time_up";
 
@@ -18,6 +20,7 @@ typedef struct {
     lv_obj_t *slider_container;
     lv_obj_t *slider;
     lv_obj_t *slider_label;
+    const char *origin_page;  /* Page that triggered the time up (for navigation back) */
 } alarm_time_up_ui_t;
 
 static alarm_time_up_ui_t s_time_up_ui;
@@ -27,7 +30,12 @@ static void remind_later_btn_event_handler(lv_event_t *e)
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_CLICKED) {
         ESP_LOGI(TAG, "Snooze 5 min button clicked");
-        alarm_start_pomodoro(5);
+        if (s_time_up_ui.origin_page != NULL) {
+            main_ui_switch_page(s_time_up_ui.origin_page);
+            s_time_up_ui.origin_page = NULL;  /* Clear origin after use */
+        } else {
+            main_ui_switch_page(UI_BRIDGE_PAGE_HOME);
+        }
     }
 }
 
@@ -46,10 +54,20 @@ static void slider_event_handler(lv_event_t *e)
     }
 }
 
+void alarm_time_up_set_origin(const char *origin_page)
+{
+    ESP_LOGI(TAG, "Set time up origin page: %s", origin_page ? origin_page : "NULL");
+    s_time_up_ui.origin_page = origin_page;
+
+    std::string wake_word = "闹钟时间到";
+    Application::GetInstance().WakeWordInvoke(wake_word);
+}
+
 lv_obj_t *alarm_time_up_create_with_parent(lv_obj_t *parent)
 {
     ESP_LOGI(TAG, "Creating alarm time up UI");
 
+    s_time_up_ui.origin_page = NULL;  /* Initialize to NULL */
     s_time_up_ui.container = lv_obj_create(parent);
     lv_obj_set_size(s_time_up_ui.container, SCREEN_WIDTH, SCREEN_HEIGHT);
     lv_obj_set_style_bg_color(s_time_up_ui.container, lv_color_black(), 0);

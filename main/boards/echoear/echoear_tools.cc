@@ -129,4 +129,28 @@ void EchoEarTools::Initialize(EspS3Cat* board)
         }
         return success;
     });
+
+    // Sleep timer control
+    mcp_server.AddTool("self.sleep.start", "设置睡眠闹钟，从当前时间到指定结束时间（24小时制）。开始时间自动为当前时间。参数：end_hour-结束时间的小时（0-23，默认8），end_min-结束时间的分钟（0-59，默认0）",
+    PropertyList({
+        Property("end_hour", kPropertyTypeInteger, 8, 0, 23),
+        Property("end_min", kPropertyTypeInteger, 0, 0, 59),
+    }), [](const PropertyList& properties) -> ReturnValue {
+        int end_hour = properties["end_hour"].value<int>();
+        int end_min = properties["end_min"].value<int>();
+        
+        // Validate parameters
+        if (end_hour < 0 || end_hour >= 24) {
+            ESP_LOGE(TAG, "Invalid end_hour: %d (must be 0-23)", end_hour);
+            return false;
+        }
+        if (end_min < 0 || end_min >= 60) {
+            ESP_LOGE(TAG, "Invalid end_min: %d (must be 0-59)", end_min);
+            return false;
+        }
+        
+        ESP_LOGI(TAG, "Setting sleep timer: current time -> %02d:%02d", end_hour, end_min);
+        alarm_start_sleep(end_hour, end_min);
+        return true;
+    });
 }

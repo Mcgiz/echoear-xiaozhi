@@ -59,8 +59,8 @@ static void ui_bridge_gesture_event_cb(lv_event_t *e)
     ui_bridge_gesture_state_t *state = &s_gesture_state;
 
     /* Suppress warning for unhandled enum values - we only care about touch events */
-    #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored "-Wswitch"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wswitch"
     switch (code) {
     case LV_EVENT_PRESSED:
         if (indev) {
@@ -81,26 +81,30 @@ static void ui_bridge_gesture_event_cb(lv_event_t *e)
         if (!state->active || state->handled || !indev) {
             break;
         }
-        
+
         lv_point_t p;
         lv_indev_get_point(indev, &p);
         lv_coord_t dx = p.x - state->start_x;
         lv_coord_t dy = p.y - state->start_y;
-        
+
         /* Log movement for debugging */
         static lv_coord_t last_dx = 0, last_dy = 0;
         if (LV_ABS(dx - last_dx) > 5 || LV_ABS(dy - last_dy) > 5) {
-            ESP_LOGD(TAG, "PRESSING: dx=%ld, dy=%ld, threshold=%d", 
+            ESP_LOGD(TAG, "PRESSING: dx=%ld, dy=%ld, threshold=%d",
                      (long)dx, (long)dy, UI_BRIDGE_GESTURE_SWIPE_THRESHOLD);
             last_dx = dx;
             last_dy = dy;
         }
 
         /* Detect swipe gestures during pressing */
-        if (LV_ABS(dx) >= UI_BRIDGE_GESTURE_SWIPE_THRESHOLD || 
-            LV_ABS(dy) >= UI_BRIDGE_GESTURE_SWIPE_THRESHOLD) {
+        /* Only recognize as swipe if one axis exceeds threshold while the other doesn't */
+        /* If both exceed threshold, it's likely dragging (e.g., arc), not a swipe */
+        bool dx_exceeds = LV_ABS(dx) >= UI_BRIDGE_GESTURE_SWIPE_THRESHOLD;
+        bool dy_exceeds = LV_ABS(dy) >= UI_BRIDGE_GESTURE_SWIPE_THRESHOLD;
+
+        if ((dx_exceeds && !dy_exceeds) || (!dx_exceeds && dy_exceeds)) {
             ui_bridge_gesture_type_t gesture = UI_BRIDGE_GESTURE_NONE;
-            
+
             /* Determine swipe direction based on dominant axis */
             if (LV_ABS(dx) > LV_ABS(dy)) {
                 /* Horizontal swipe */
@@ -117,13 +121,17 @@ static void ui_bridge_gesture_event_cb(lv_event_t *e)
                     gesture = UI_BRIDGE_GESTURE_SWIPE_DOWN;
                 }
             }
-            
+
             if (gesture != UI_BRIDGE_GESTURE_NONE) {
                 ESP_LOGD(TAG, "swipe detected: %d", gesture);
                 /* Handle page navigation directly */
-                ui_bridge_handle_gesture_navigation(gesture);
+                // ui_bridge_handle_gesture_navigation(gesture);
                 state->handled = true;
             }
+        } else if (dx_exceeds && dy_exceeds) {
+            /* Both axes exceed threshold - likely dragging (e.g., arc), not a swipe */
+            ESP_LOGD(TAG, "Both axes exceed threshold (dx=%ld, dy=%ld) - treating as drag, not swipe",
+                     (long)dx, (long)dy);
         }
         break;
     }
@@ -135,22 +143,26 @@ static void ui_bridge_gesture_event_cb(lv_event_t *e)
             state->handled = false;
             break;
         }
-        
+
         lv_point_t p;
         lv_indev_get_point(indev, &p);
         lv_coord_t dx = p.x - state->start_x;
         lv_coord_t dy = p.y - state->start_y;
         uint32_t press_duration = lv_tick_elaps(state->press_start_time);
-        
-        ESP_LOGD(TAG, "release: dx=%ld, dy=%ld, duration=%lu ms, handled=%d", 
+
+        ESP_LOGD(TAG, "release: dx=%ld, dy=%ld, duration=%lu ms, handled=%d",
                  (long)dx, (long)dy, press_duration, state->handled);
-        
+
         /* Check for swipe gesture on release (if not already handled) */
         if (!state->handled) {
-            if (LV_ABS(dx) >= UI_BRIDGE_GESTURE_SWIPE_THRESHOLD || 
-                LV_ABS(dy) >= UI_BRIDGE_GESTURE_SWIPE_THRESHOLD) {
+            /* Only recognize as swipe if one axis exceeds threshold while the other doesn't */
+            /* If both exceed threshold, it's likely dragging (e.g., arc), not a swipe */
+            bool dx_exceeds = LV_ABS(dx) >= UI_BRIDGE_GESTURE_SWIPE_THRESHOLD;
+            bool dy_exceeds = LV_ABS(dy) >= UI_BRIDGE_GESTURE_SWIPE_THRESHOLD;
+
+            if ((dx_exceeds && !dy_exceeds) || (!dx_exceeds && dy_exceeds)) {
                 ui_bridge_gesture_type_t gesture = UI_BRIDGE_GESTURE_NONE;
-                
+
                 /* Determine swipe direction based on dominant axis */
                 if (LV_ABS(dx) > LV_ABS(dy)) {
                     /* Horizontal swipe */
@@ -167,13 +179,17 @@ static void ui_bridge_gesture_event_cb(lv_event_t *e)
                         gesture = UI_BRIDGE_GESTURE_SWIPE_DOWN;
                     }
                 }
-                
+
                 if (gesture != UI_BRIDGE_GESTURE_NONE) {
                     ESP_LOGD(TAG, "swipe detected: %d", gesture);
                     /* Handle page navigation directly */
                     ui_bridge_handle_gesture_navigation(gesture);
                     state->handled = true;
                 }
+            } else if (dx_exceeds && dy_exceeds) {
+                /* Both axes exceed threshold - likely dragging (e.g., arc), not a swipe */
+                ESP_LOGD(TAG, "Both axes exceed threshold (dx=%ld, dy=%ld) - treating as drag, not swipe",
+                         (long)dx, (long)dy);
             } else {
                 /* It's a press (not a swipe) */
                 ui_bridge_gesture_type_t gesture;
@@ -185,7 +201,7 @@ static void ui_bridge_gesture_event_cb(lv_event_t *e)
                 ESP_LOGD(TAG, "press detected: %d (duration: %lu ms)", gesture, press_duration);
             }
         }
-        
+
         state->active = false;
         state->handled = false;
         break;
@@ -195,7 +211,7 @@ static void ui_bridge_gesture_event_cb(lv_event_t *e)
         /* Ignore all other events (LV_EVENT_FLUSH_WAIT_START, LV_EVENT_VSYNC, etc.) */
         break;
     }
-    #pragma GCC diagnostic pop
+#pragma GCC diagnostic pop
 }
 
 /* Internal function to refresh emote display */
@@ -213,7 +229,7 @@ static void ui_bridge_refresh_emote_display(void)
             return;
         }
     }
-    
+
     if (s_cached_emote_display) {
         s_cached_emote_display->RefreshAll();
     }
@@ -225,7 +241,7 @@ static void ui_bridge_handle_gesture_navigation(ui_bridge_gesture_type_t gesture
     /* Map gesture to page direction */
     int direction = 0;
     const char *gesture_name = NULL;
-    
+
     switch (gesture_type) {
     case UI_BRIDGE_GESTURE_SWIPE_LEFT:
     case UI_BRIDGE_GESTURE_SWIPE_DOWN:
@@ -268,7 +284,7 @@ static void ui_bridge_handle_gesture_navigation(ui_bridge_gesture_type_t gesture
 
     /* Calculate next page index with round-robin */
     int next_index = (current_index + direction + (int)total_count) % (int)total_count;
-    
+
     /* Find target page by index (only counting cycle pages) */
     const char *target_page = NULL;
     const char *current_name = "UNKNOWN";
@@ -331,7 +347,7 @@ void ui_bridge_init(Display *display)
     lv_obj_set_style_bg_opa(s_base_container, LV_OPA_TRANSP, 0);
     lv_obj_clear_flag(s_base_container, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(s_base_container, LV_OBJ_FLAG_CLICKABLE);
-    
+
     /* Register base container as default page */
     ui_bridge_register_page(UI_BRIDGE_PAGE_HOME, &s_base_container);
     ui_bridge_switch_page(UI_BRIDGE_PAGE_HOME);  /* Set as default page */
@@ -339,7 +355,7 @@ void ui_bridge_init(Display *display)
 
     /* Create main UI (which will register its own pages) */
     alarm_create_ui();
-    
+
     ESP_LOGI(TAG, "LVGL display bridge initialized for %dx%d", DISPLAY_WIDTH, DISPLAY_HEIGHT);
 }
 
@@ -360,7 +376,7 @@ bool ui_bridge_register_page_with_cycle(const char *page_id, lv_obj_t **containe
         ESP_LOGE(TAG, "Page ID cannot be NULL");
         return false;
     }
-    
+
     /* Check if already registered */
     ui_bridge_page_node_t *node = s_page_list;
     while (node != NULL) {
@@ -372,20 +388,20 @@ bool ui_bridge_register_page_with_cycle(const char *page_id, lv_obj_t **containe
         }
         node = node->next;
     }
-    
+
     /* Create new node */
     ui_bridge_page_node_t *new_node = (ui_bridge_page_node_t *)malloc(sizeof(ui_bridge_page_node_t));
     if (new_node == NULL) {
         ESP_LOGE(TAG, "Failed to allocate memory for page container node");
         return false;
     }
-    
+
     new_node->page_id = page_id;
     new_node->container = container;
     new_node->in_cycle = in_cycle;
     new_node->next = s_page_list;  /* Insert at head */
     s_page_list = new_node;
-    
+
     /* Count nodes for logging */
     unsigned int count = 0;
     node = s_page_list;
@@ -393,7 +409,7 @@ bool ui_bridge_register_page_with_cycle(const char *page_id, lv_obj_t **containe
         count++;
         node = node->next;
     }
-    ESP_LOGD(TAG, "Registered page: %s (in_cycle: %s, total: %u)", 
+    ESP_LOGD(TAG, "Registered page: %s (in_cycle: %s, total: %u)",
              page_id ? page_id : "UNKNOWN", in_cycle ? "true" : "false", count);
     return true;
 }
@@ -404,7 +420,7 @@ void ui_bridge_switch_page(const char *page_id)
         ESP_LOGW(TAG, "Cannot switch to NULL page");
         return;
     }
-    
+
     /* Update current page state */
     s_current_page = page_id;
 
@@ -449,4 +465,3 @@ void ui_bridge_set_page_switch_callback(ui_bridge_page_switch_cb_t cb, void *use
     s_page_switch_cb = cb;
     s_page_switch_user_data = user_data;
 }
-

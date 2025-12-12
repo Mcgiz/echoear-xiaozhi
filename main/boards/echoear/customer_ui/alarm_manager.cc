@@ -106,3 +106,45 @@ bool alarm_pause_pomodoro(void)
     }
     return true;
 }
+
+void alarm_start_sleep(int32_t end_hour, int32_t end_min)
+{
+    /* Validate and clamp values */
+    const int32_t DEFAULT_END_HOUR = 8;
+
+    if (end_hour < 0 || end_hour >= 24) {
+        ESP_LOGW(TAG, "Invalid end_hour: %ld, using default %ld", (long)end_hour, (long)DEFAULT_END_HOUR);
+        end_hour = DEFAULT_END_HOUR;
+    }
+    if (end_min < 0 || end_min >= 60) {
+        ESP_LOGW(TAG, "Invalid end_min: %ld, using 0", (long)end_min);
+        end_min = 0;
+    }
+
+    ESP_LOGI(TAG, "Show sleep page with end time: %02ld:%02ld (start time will be current time)",
+             (long)end_hour, (long)end_min);
+
+    /* Configure sleep timer first (start time is current time), then switch page */
+    alarm_sleep_24h_set_time_range(end_hour, end_min);
+    main_ui_switch_page(PAGE_SLEEP);
+}
+
+void alarm_set_sleep_end_time(int32_t end_hour, int32_t end_min)
+{
+    /* Validate and clamp values */
+    const int32_t DEFAULT_END_HOUR = 8;
+
+    if (end_hour < 0 || end_hour >= 24) {
+        ESP_LOGW(TAG, "Invalid end_hour: %ld, using default %ld", (long)end_hour, (long)DEFAULT_END_HOUR);
+        end_hour = DEFAULT_END_HOUR;
+    }
+    if (end_min < 0 || end_min >= 60) {
+        ESP_LOGW(TAG, "Invalid end_min: %ld, using 0", (long)end_min);
+        end_min = 0;
+    }
+
+    ESP_LOGI(TAG, "Set sleep end time: %02ld:%02ld", (long)end_hour, (long)end_min);
+
+    /* Configure sleep end time only */
+    alarm_sleep_24h_set_end_time(end_hour, end_min);
+}

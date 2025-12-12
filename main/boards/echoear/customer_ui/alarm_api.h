@@ -46,6 +46,28 @@ bool alarm_resume_pomodoro(void);
  */
 bool alarm_pause_pomodoro(void);
 
+/**
+ * @brief Show sleep timer page with specified end time
+ *
+ * Configures the sleep timer with current time as start time and specified end time,
+ * and switches to the sleep page.
+ *
+ * @param end_hour End hour (0-23)
+ * @param end_min  End minute (0-59)
+ */
+void alarm_start_sleep(int32_t end_hour, int32_t end_min);
+
+/**
+ * @brief Set sleep end time only
+ *
+ * Sets only the end time for the sleep timer, precise to minutes.
+ * The start time is automatically set to current time. Does not switch page.
+ *
+ * @param end_hour End hour (0-23)
+ * @param end_min  End minute (0-59)
+ */
+void alarm_set_sleep_end_time(int32_t end_hour, int32_t end_min);
+
 #ifdef __cplusplus
 }
 #endif
