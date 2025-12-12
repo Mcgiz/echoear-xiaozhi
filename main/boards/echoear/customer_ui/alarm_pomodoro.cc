@@ -224,6 +224,12 @@ static void timer_tick_cb(lv_timer_t *timer)
 {
     alarm_pomodoro_ui_t *ui = (alarm_pomodoro_ui_t *)lv_timer_get_user_data(timer);
 
+    /* Check if current page is pomodoro page */
+    const char *current_page = ui_bridge_get_current_page();
+    if (current_page == NULL || strcmp(current_page, PAGE_POMODORO) != 0) {
+        return;
+    }
+
     if (ui->remaining_seconds > 0) {
         ui->remaining_seconds--;
         // Mark that timer was running (for detecting natural countdown finish)
@@ -239,9 +245,7 @@ static void timer_tick_cb(lv_timer_t *timer)
 
         // Update arc progress (0-360 degrees, based on 60 minute max)
         int32_t progress = (360 * ui->remaining_seconds) / TIMER_MAX_SECONDS;
-        // Use (progress, 0) so that the visible arc is clockwise from 12 o'clock
         lv_arc_set_angles(ui->progress_arc, 0, progress);
-        // ESP_LOGI(TAG, "Progress: %d°, remaining seconds: %d:%d", progress, ui->remaining_seconds / 60, ui->remaining_seconds % 60);
 
         pomodoro_set_state(ui, TIMER_STATE_RUNNING);
 

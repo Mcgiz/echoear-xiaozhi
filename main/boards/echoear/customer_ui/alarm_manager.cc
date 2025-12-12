@@ -20,9 +20,6 @@ static lv_obj_t *container_pomodoro = NULL;
 static lv_obj_t *container_sleep = NULL;
 static lv_obj_t *container_time_up = NULL;
 
-/* Global sleep end time storage */
-int32_t s_sleep_end_hour = 8;  /* Default end hour */
-int32_t s_sleep_end_min = 0;   /* Default end minute */
 
 // ============================================================================
 // Global Variables
@@ -62,8 +59,7 @@ void alarm_create_ui()
 
     /* Create and register time up container */
     container_time_up = alarm_time_up_create_with_parent(scr);
-    // ui_bridge_register_page_with_cycle(PAGE_TIME_UP, &container_time_up, false);
-    ui_bridge_register_page_with_cycle(PAGE_TIME_UP, &container_time_up, true);
+    ui_bridge_register_page_with_cycle(PAGE_TIME_UP, &container_time_up, false);
 
     /* Register page switch callback for custom handling (e.g., pomodoro) */
     ui_bridge_set_page_switch_callback(main_ui_page_switch_callback, NULL);
@@ -125,10 +121,6 @@ void alarm_start_sleep(int32_t end_hour, int32_t end_min)
         end_min = 0;
     }
 
-    /* Store end time globally */
-    s_sleep_end_hour = end_hour;
-    s_sleep_end_min = end_min;
-
     ESP_LOGI(TAG, "Show sleep page with end time: %02ld:%02ld (start time will be current time)",
              (long)end_hour, (long)end_min);
 
@@ -151,24 +143,12 @@ void alarm_set_sleep_end_time(int32_t end_hour, int32_t end_min)
         end_min = 0;
     }
 
-    /* Store end time globally */
-    s_sleep_end_hour = end_hour;
-    s_sleep_end_min = end_min;
-
-    ESP_LOGI(TAG, "Set sleep end time: %02ld:%02ld", (long)end_hour, (long)end_min);
-
-    /* Update UI via internal function (avoid recursive call) */
-    alarm_sleep_24h_update_ui_internal(end_hour, end_min);
+    /* Delegate to sleep_24h module */
+    alarm_sleep_24h_set_end_time(end_hour, end_min);
 }
 
 bool alarm_get_sleep_end_time(int32_t *end_hour, int32_t *end_min)
 {
-    if (end_hour == NULL || end_min == NULL) {
-        return false;
-    }
-
-    *end_hour = s_sleep_end_hour;
-    *end_min = s_sleep_end_min;
-
-    return true;
+    /* Delegate to sleep_24h module */
+    return alarm_sleep_24h_get_end_time(end_hour, end_min);
 }

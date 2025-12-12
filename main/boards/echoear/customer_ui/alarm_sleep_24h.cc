@@ -47,6 +47,10 @@ typedef struct {
 
 static alarm_sleep_24h_ui_t s_sleep_24h_ui;
 
+/* Internal storage for sleep end time */
+static int32_t s_sleep_end_hour = 8;  /* Default end hour */
+static int32_t s_sleep_end_min = 0;   /* Default end minute */
+
 static void get_current_time(int32_t *hour, int32_t *min)
 {
     time_t now;
@@ -145,17 +149,13 @@ static void update_range_from_angles(alarm_sleep_24h_ui_t *ui, bool sync_from_st
     /* Start time is always current time */
     update_start_time_display(ui);
 
-    /* Get current time */
-    int32_t current_hour, current_min;
-    get_current_time(&current_hour, &current_min);
-    int32_t current_total_sec = current_hour * 3600 + current_min * 60;
-
     int32_t end_hour, end_min;
     int32_t end_total_sec;
 
     if (sync_from_storage) {
-        /* Get stored end time from global storage and sync to angle */
-        alarm_get_sleep_end_time(&end_hour, &end_min);
+        /* Get stored end time from internal storage and sync to angle */
+        end_hour = s_sleep_end_hour;
+        end_min = s_sleep_end_min;
         end_total_sec = end_hour * 3600 + end_min * 60;
         ui->end_angle = (end_total_sec * 360) / DAY_SECONDS;
     } else {
@@ -164,7 +164,7 @@ static void update_range_from_angles(alarm_sleep_24h_ui_t *ui, bool sync_from_st
         end_hour = end_total_sec / 3600;
         end_min = (end_total_sec % 3600) / 60;
         
-        /* Validate and update global storage directly (avoid recursive call) */
+        /* Validate and update internal storage */
         if (end_hour < 0 || end_hour >= 24) {
             end_hour = DEFAULT_END_HOUR;
         }
@@ -172,9 +172,7 @@ static void update_range_from_angles(alarm_sleep_24h_ui_t *ui, bool sync_from_st
             end_min = 0;
         }
         
-        /* Update global storage via extern declaration */
-        extern int32_t s_sleep_end_hour;
-        extern int32_t s_sleep_end_min;
+        /* Update internal storage */
         s_sleep_end_hour = end_hour;
         s_sleep_end_min = end_min;
         
@@ -262,8 +260,8 @@ static void time_update_timer_cb(lv_timer_t *timer)
     get_current_time(&current_hour, &current_min);
     int32_t current_total_sec = current_hour * 3600 + current_min * 60;
 
-    int32_t end_hour, end_min;
-    alarm_get_sleep_end_time(&end_hour, &end_min);
+    int32_t end_hour = s_sleep_end_hour;
+    int32_t end_min = s_sleep_end_min;
     int32_t end_total_sec = end_hour * 3600 + end_min * 60;
 
     if (end_total_sec == current_total_sec && !ui->has_jumped_to_time_up) {
@@ -594,14 +592,26 @@ void alarm_sleep_24h_set_end_time(int32_t end_hour, int32_t end_min)
         end_min = 0;
     }
 
-    /* Store end time globally and update UI */
-    alarm_set_sleep_end_time(end_hour, end_min);
+    /* Store end time internally */
+    s_sleep_end_hour = end_hour;
+    s_sleep_end_min = end_min;
+
+    ESP_LOGI(TAG, "Set sleep end time: %02ld:%02ld", (long)end_hour, (long)end_min);
+
+    /* Update UI */
+    alarm_sleep_24h_update_ui_internal(end_hour, end_min);
 }
 
 bool alarm_sleep_24h_get_end_time(int32_t *end_hour, int32_t *end_min)
 {
-    /* Get end time from global storage in alarm_manager */
-    return alarm_get_sleep_end_time(end_hour, end_min);
+    if (end_hour == NULL || end_min == NULL) {
+        return false;
+    }
+
+    *end_hour = s_sleep_end_hour;
+    *end_min = s_sleep_end_min;
+
+    return true;
 }
 
 void alarm_sleep_24h_snooze(int32_t minutes)
@@ -627,6 +637,5 @@ void alarm_sleep_24h_snooze(int32_t minutes)
              (long)current_hour, (long)current_min, (long)new_hour, (long)new_min, (long)minutes);
 
     /* Update end time */
-    alarm_set_sleep_end_time(new_hour, new_min);
-    main_ui_switch_page(PAGE_SLEEP);
+    alarm_sleep_24h_set_end_time(new_hour, new_min);
 }
