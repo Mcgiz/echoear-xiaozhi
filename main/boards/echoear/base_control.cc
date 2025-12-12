@@ -84,13 +84,15 @@ void BaseControl::HandleCommand(uint8_t cmd, uint8_t *data, int data_len)
         return;
     }
 
-    if (cmd != ECHO_BASE_CMD_RECV_HEARTBEAT) {
+    emote::EmoteDisplay* emote_display = dynamic_cast<emote::EmoteDisplay*>(display);
+
+    // if (cmd != ECHO_BASE_CMD_RECV_HEARTBEAT) {
         printf("Handle: cmd=%02X, ", cmd);
         for (int i = 0; i < data_len; i++) {
             printf("%02X ", data[i]);
         }
         printf("\n");
-    }
+    // }
 
     switch (cmd) {
     case ECHO_BASE_CMD_RECV_SLIDE_SWITCH: {
@@ -122,6 +124,15 @@ void BaseControl::HandleCommand(uint8_t cmd, uint8_t *data, int data_len)
                     xSemaphoreGive(calibrate_semaphore_);
                 }
                 break;
+            case ECHO_BASE_CMD_RECV_SWITCH_FISH_ATTACHED:
+                ESP_LOGI(TAG, "Fish attached");
+                emote_display->InsertAnimDialog("eat", 3500);
+                break;
+            case ECHO_BASE_CMD_RECV_SWITCH_PAIR_DETECT:
+                ESP_LOGI(TAG, "Pair detect");
+                emote_display->SetEmotion("happy");
+                echo_base_control_set_action(ECHO_BASE_CMD_SET_ACTION_LOOK_AROUND);
+                break;
             default:
                 ESP_LOGI(TAG, "Slide switch event: %d", event);
                 break;
@@ -148,7 +159,6 @@ void BaseControl::HandleCommand(uint8_t cmd, uint8_t *data, int data_len)
     }
     case ECHO_BASE_CMD_RECV_HEARTBEAT: {
         uint16_t event = (data[0] << 8) | data[1];
-        // ESP_LOGI(TAG, "Heartbeat event: %d", event);
         switch (event) {
         case ECHO_BASE_CMD_RECV_HEARTBEAT_ALIVE: {
             int64_t current_time = esp_timer_get_time() / 1000;  // Convert to milliseconds
@@ -159,11 +169,7 @@ void BaseControl::HandleCommand(uint8_t cmd, uint8_t *data, int data_len)
 
             if (was_offline) {
                 ESP_LOGI(TAG, "Echo base connected (reinserted)");
-
-                emote::EmoteDisplay* emote_display = dynamic_cast<emote::EmoteDisplay*>(display);
-                if (emote_display != nullptr) {
-                    emote_display->InsertAnimDialog("insert", 3000);
-                }
+                emote_display->InsertAnimDialog("insert", 3000);
             }
             break;
         }

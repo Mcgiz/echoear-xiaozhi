@@ -21,6 +21,13 @@ extern "C" {
  */
 lv_obj_t *alarm_time_up_create_with_parent(lv_obj_t *parent);
 
+/**
+ * @brief Set the origin page for time up UI (for navigation back)
+ *
+ * @param origin_page  The page name that triggered the time up (e.g., "SLEEP", "POMODORO")
+ */
+void alarm_time_up_set_origin(const char *origin_page);
+
 #ifdef __cplusplus
 }
 #endif

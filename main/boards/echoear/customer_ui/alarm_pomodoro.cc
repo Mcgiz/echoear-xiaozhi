@@ -224,6 +224,12 @@ static void timer_tick_cb(lv_timer_t *timer)
 {
     alarm_pomodoro_ui_t *ui = (alarm_pomodoro_ui_t *)lv_timer_get_user_data(timer);
 
+    /* Check if current page is pomodoro page */
+    const char *current_page = ui_bridge_get_current_page();
+    if (current_page == NULL || strcmp(current_page, PAGE_POMODORO) != 0) {
+        return;
+    }
+
     if (ui->remaining_seconds > 0) {
         ui->remaining_seconds--;
         // Mark that timer was running (for detecting natural countdown finish)
@@ -239,10 +245,7 @@ static void timer_tick_cb(lv_timer_t *timer)
 
         // Update arc progress (0-360 degrees, based on 60 minute max)
         int32_t progress = (360 * ui->remaining_seconds) / TIMER_MAX_SECONDS;
-        // Use (progress, 0) so that the visible arc is clockwise from 12 o'clock
-        // lv_arc_set_angles(ui->progress_arc, progress, 0);
         lv_arc_set_angles(ui->progress_arc, 0, progress);
-        // ESP_LOGI(TAG, "Progress: %d°, remaining seconds: %d:%d", progress, ui->remaining_seconds / 60, ui->remaining_seconds % 60);
 
         pomodoro_set_state(ui, TIMER_STATE_RUNNING);
 
@@ -256,19 +259,14 @@ static void timer_tick_cb(lv_timer_t *timer)
             lv_label_set_text(ui->time_sec_label, "00");
         }
         pomodoro_set_state(ui, TIMER_STATE_END);
-        ESP_LOGI(TAG, "Timer finished!");
         lv_timer_pause(timer);
 
-        // Only jump to alarm alert UI if timer was running and naturally counted down to zero
-        // Don't jump if timer was manually set to 0 or initialized to 0
         if (ui->was_running_before_zero) {
-            // Timer was running and naturally counted down to zero
-            ESP_LOGI(TAG, "Timer countdown finished naturally - jump to alarm alert UI");
+            ESP_LOGI(TAG, "Pomodoro timer finished");
+            alarm_time_up_set_origin(PAGE_POMODORO);
             main_ui_switch_page(PAGE_TIME_UP);
-            // Reset flag after jumping
             ui->was_running_before_zero = false;
         } else {
-            // Timer was manually set to 0 or initialized to 0, don't jump
             ESP_LOGI(TAG, "Timer set to 0 manually or initialized to 0 - no jump");
         }
     }
